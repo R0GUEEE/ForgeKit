@@ -35,6 +35,8 @@ static void *FKVolumeSliderContext = &FKVolumeSliderContext;
 @property (nonatomic, assign) double lastFireTime;
 @property (nonatomic, assign) double suppressUntil;
 @property (nonatomic, assign) NSInteger eventCount;
+@property (nonatomic, assign) NSInteger lastDirection;
+@property (nonatomic, assign) double lastDirectionTime;
 @end
 
 @implementation FKVolumeTrigger
@@ -67,6 +69,12 @@ static void *FKVolumeSliderContext = &FKVolumeSliderContext;
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(applicationBecameActive:)
                                                  name:UIApplicationDidBecomeActiveNotification
+                                               object:nil];
+    // The volume-up + volume-down chord is consumed by iOS as the screenshot
+    // gesture; the screenshot notification is the only public signal for it.
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(screenshotTaken:)
+                                                 name:UIApplicationUserDidTakeScreenshotNotification
                                                object:nil];
     [self.session addObserver:self forKeyPath:@"outputVolume"
                       options:NSKeyValueObservingOptionNew
@@ -213,6 +221,19 @@ static void *FKVolumeSliderContext = &FKVolumeSliderContext;
         self.lastVolume = value;
         self.eventCount++;
 
+        NSInteger direction = delta > 0 ? 1 : -1;
+        if ([FKPrefs boolForKey:@"volumeChordTrigger" defaultValue:YES] &&
+            self.lastDirection != 0 && direction != self.lastDirection &&
+            now - self.lastDirectionTime <= 0.20) {
+            // Two opposing presses inside one gesture window: treat as the chord.
+            self.lastDirection = 0;
+            self.pendingUpTime = 0;
+            [self fire];
+            return;
+        }
+        self.lastDirection = direction;
+        self.lastDirectionTime = now;
+
         if (delta > 0) {
             self.pendingUpTime = now;
             self.pendingUpVolume = value;
@@ -224,6 +245,13 @@ static void *FKVolumeSliderContext = &FKVolumeSliderContext;
             [self fire];
         }
     });
+}
+
+- (void)screenshotTaken:(NSNotification *)notification {
+    if (!self.running) return;
+    if (![FKPrefs boolForKey:@"volumeChordTrigger" defaultValue:YES]) return;
+    FKLog(@"volume chord detected via screenshot notification");
+    [self fire];
 }
 
 - (void)fire {

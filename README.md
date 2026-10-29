@@ -122,6 +122,12 @@ Without it the server still binds and works from Safari on the device
   coordinates and inset by 4 pt. If the app hides the status bar, the top-left
   status-area rectangle is used instead (can be disabled in Settings). Hold
   duration, haptics and the fallback are configurable.
+* **Volume chord** — press volume up and volume down **together**. iOS consumes that chord
+  as the screenshot gesture, so the only public signal is
+  `UIApplicationUserDidTakeScreenshotNotification`; ForgeKit listens for it and toggles the
+  panel. A screenshot is saved as a side effect. Two opposing volume events inside 200 ms
+  are treated as the chord as well. Toggle: Settings → Trigger → *Both buttons together*
+  (default on).
 * **Volume gesture** — press volume up, then volume down, within 1.2 s (0.8 / 1.2 / 2.0
   selectable). Three sources feed one state machine: the AVSystemController notification,
   KVO on `AVAudioSession.outputVolume`, and KVO on a hidden `MPVolumeView` slider. The

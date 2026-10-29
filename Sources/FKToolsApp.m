@@ -374,7 +374,7 @@ static id FKCoerceValue(id value, NSString *type) {
                       @"token_masked": masked, @"requires_token": @([FKPrefs boolForKey:@"requireToken" defaultValue:YES]) },
         @"panel": @{ @"visible": @([[FKPanel sharedPanel] isVisible]),
                      @"gesture": @"long-press status bar clock",
-                     @"alt_gesture": @"volume up then down",
+                     @"alt_gesture": @"volume up then down; volume up+down chord",
                      @"volume_trigger": @([[FKVolumeTrigger sharedTrigger] isRunning]) },
         @"il2cpp": @{ @"available": @([FKIL2CPP available]), @"detail": [FKIL2CPP statusText] },
         @"shell": @{ @"cwd": [FKShell sharedShell].currentDirectory,
