@@ -385,7 +385,14 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
     return self;
 }
 
-- (BOOL)isVisible { return _window != nil && !_window.hidden && _window.alpha > 0.01; }
+- (BOOL)isVisible {
+    if (![NSThread isMainThread]) {
+        __block BOOL visible = NO;
+        dispatch_sync(dispatch_get_main_queue(), ^{ visible = [self isVisible]; });
+        return visible;
+    }
+    return _window != nil && !_window.hidden && _window.alpha > 0.01;
+}
 
 - (void)show {
     if (![NSThread isMainThread]) { FKRunOnMain(^{ [self show]; }); return; }

@@ -254,6 +254,9 @@ static BOOL FKSendAll(int fd, const void *bytes, size_t length) {
 
     NSDictionary *response = [self responseForMethod:method path:path query:FKParseQuery(query)
                                              headers:headers body:body];
+    NSUInteger responseBytes = [response[@"rawBody"] isKindOfClass:[NSData class]]
+        ? [response[@"rawBody"] length]
+        : [(id)(response[@"body"] ?: @"") length];
     [self sendResponse:response toClient:fd];
     close(fd);
 
@@ -264,7 +267,7 @@ static BOOL FKSendAll(int fd, const void *bytes, size_t length) {
         @"path": path,
         @"status": response[@"status"] ?: @200,
         @"ms": @((NSInteger)(elapsed * 1000)),
-        @"bytes": @(0),
+        @"bytes": @(responseBytes),
     } mutableCopy];
     if (query.length) entry[@"query"] = query;
     [self recordRequest:entry];
