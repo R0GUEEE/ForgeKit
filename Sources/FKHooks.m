@@ -8,6 +8,7 @@
 #import "FKRuntimeKit.h"
 
 static void FKLoadBreadcrumb(NSString *phase) {
+    NSLog(@"[ForgeKit] %@ v%@", phase, FKVersionString);
     @try {
         NSString *documents = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
         if (!documents.length) return;

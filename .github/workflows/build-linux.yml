@@ -35,5 +35,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ForgeKit-linux
-          path: build/ForgeKit.dylib
+          path: build/*.dylib
           retention-days: 30
