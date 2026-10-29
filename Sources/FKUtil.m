@@ -15,7 +15,7 @@
 #import <dlfcn.h>
 #import <mach-o/dyld.h>
 
-NSString * const FKVersionString = @"2.0.1";
+NSString * const FKVersionString = @"2.0.2";
 NSString * const FKServerDidChangeNotification = @"FKServerDidChangeNotification";
 
 static NSMutableArray<NSString *> *FKLogStorage(void) {

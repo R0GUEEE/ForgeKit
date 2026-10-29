@@ -56,10 +56,17 @@ CI: `.github/workflows/build.yml` builds the dylib on macOS, verifies the
 architectures, asserts the constructor symbol survived optimisation, and fails if
 any substrate/MSHook/ellekit symbol appears in the binary.
 
-`.github/workflows/build-linux.yml` is the fallback used for this release: Ubuntu,
-clang 18 + `ld64.lld` against the iPhoneOS 16.5 SDK, one thin link per architecture and
-a Python fat-header merge. It produces the same universal dylib without a macOS runner.
+`.github/workflows/build-linux.yml` is the fallback used while macOS runners are
+unavailable: Ubuntu, clang 18 + `ld64.lld` against the iPhoneOS 16.5 SDK, one thin link
+per architecture and a Python fat-header merge. The link is fully resolved (no
+`-undefined dynamic_lookup`); `Sources/FKPlatformCompat.m` supplies the compiler-rt
+`__isPlatformVersionAtLeast` shim that Xcode would otherwise link automatically.
 `tools/make-fat.py` and `tools/inspect-macho.py` do the merge and verification.
+
+If the dylib loads but the panel never appears, check
+`Documents/ForgeKit/load.log`: it is appended at constructor entry (`constructor`),
+after the deferred setup starts (`setup-start`) and on completion (`setup-done`), and
+records setup exceptions with their reason.
 
 ---
 
