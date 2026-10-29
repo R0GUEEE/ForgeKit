@@ -1,0 +1,40 @@
+name: build-linux
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  dylib:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm
+      - name: Fetch iPhoneOS SDK
+        run: |
+          set -eux
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/theos/sdks.git /tmp/sdks
+          cd /tmp/sdks
+          git sparse-checkout set iPhoneOS16.5.sdk
+      - name: Link arm64 + arm64e
+        run: |
+          set -eux
+          SDK=/tmp/sdks/iPhoneOS16.5.sdk
+          mkdir -p build
+          COMMON="-isysroot $SDK -fobjc-arc -fblocks -O2 -fvisibility=hidden -dynamiclib -fuse-ld=lld -ISources -Wl,-install_name,@rpath/ForgeKit.dylib -Wl,-undefined,dynamic_lookup"
+          FRAMEWORKS="-framework Foundation -framework UIKit -framework CoreGraphics -framework QuartzCore -framework JavaScriptCore -framework Security -framework CoreImage -framework AVFoundation -framework MediaPlayer -framework WebKit -lz -lsqlite3"
+          clang -target arm64-apple-ios14.0 $COMMON $FRAMEWORKS Sources/*.m -o build/ForgeKit-arm64.dylib
+          clang -target arm64e-apple-ios14.0 $COMMON $FRAMEWORKS Sources/*.m -o build/ForgeKit-arm64e.dylib
+          llvm-lipo -create build/ForgeKit-arm64.dylib build/ForgeKit-arm64e.dylib -output build/ForgeKit.dylib
+          file build/ForgeKit.dylib
+          llvm-lipo -info build/ForgeKit.dylib
+          llvm-objdump --macho --dylibs-used build/ForgeKit.dylib
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ForgeKit-linux
+          path: build/ForgeKit.dylib
+          retention-days: 30
