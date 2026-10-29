@@ -5,6 +5,7 @@
 #import "ForgeKit.h"
 #import <objc/runtime.h>
 #import "FKUtilities.h"
+#import "FKRuntimeKit.h"
 
 static void FKInstallGesturesOnAllWindows(void) {
     UIApplication *application = [UIApplication sharedApplication];
@@ -68,6 +69,7 @@ static void FKForgeKitInitialize(void) {
             FKLog(@"ForgeKit %@ loaded into %@ (%@)", FKVersionString, FKAppIdentifier(), FKDeviceModelIdentifier());
 
             [FKUtilities installWebInspectorSwizzle];
+            [FKRuntimeKit installNetworkRecorder];
             if ([FKPrefs boolForKey:@"webInspector" defaultValue:NO])
                 [FKUtilities applyWebInspectorToOpenWebViews];
 

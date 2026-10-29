@@ -49,3 +49,8 @@
 + (NSArray<NSDictionary *> *)definitions;
 + (NSDictionary *)callTool:(NSString *)name arguments:(NSDictionary *)arguments;
 @end
+
+@interface FKRuntimeTools : NSObject
++ (NSArray<NSDictionary *> *)definitions;
++ (NSDictionary *)callTool:(NSString *)name arguments:(NSDictionary *)arguments;
+@end

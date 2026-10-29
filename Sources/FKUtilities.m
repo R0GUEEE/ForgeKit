@@ -13,6 +13,7 @@
 //
 
 #import "FKUtilities.h"
+#import "FKRuntimeKit.h"
 #import "FKToolsPrivate.h"
 #import <WebKit/WebKit.h>
 #import <objc/message.h>
@@ -468,7 +469,7 @@ static FKFLEXGestureTarget *gFLEXGestureTarget = nil;
     };
     return @[
         @{ @"name": @"utilities_status", @"description":
-               @"Status of bundled utilities: FLEX, Frida gadget, WebKit inspector.",
+               @"Status of the native runtime toolkit and the WebKit inspector.",
            @"inputSchema": @{ @"type": @"object", @"properties": @{}, @"required": @[] } },
         @{ @"name": @"web_inspector", @"description":
                @"Enable or disable WebKit remote inspection for WKWebView instances (iOS 16.4+ public API, private fallback below).",
@@ -476,28 +477,17 @@ static FKFLEXGestureTarget *gFLEXGestureTarget = nil;
                               @"properties": @{ @"enabled": @{ @"type": @"boolean", @"description": @"Target state; omit to read." },
                                                 @"apply": @{ @"type": @"boolean", @"description": @"Also apply to already-open web views." } },
                               @"required": @[], @"additionalProperties": @NO } },
-        @{ @"name": @"flex", @"description":
-               @"Load libFLEX (core) plus FLEXing when libsubstrate is available; otherwise install the built-in two-finger long-press gesture. action = status | load | show | hide.",
-           @"inputSchema": @{ @"type": @"object",
-                              @"properties": @{ @"action": @{ @"type": @"string", @"enum": @[@"status", @"load", @"show", @"hide"] },
-                                                @"path": str(@"Optional dylib path.") },
-                              @"required": @[], @"additionalProperties": @NO } },
-        @{ @"name": @"frida", @"description":
-               @"Load and inspect the Frida gadget. action = status | load | config.",
-           @"inputSchema": @{ @"type": @"object",
-                              @"properties": @{ @"action": @{ @"type": @"string", @"enum": @[@"status", @"load", @"config"] },
-                                                @"path": str(@"Optional gadget dylib path."),
-                                                @"config": @{ @"type": @"object", @"description": @"FridaGadget.config contents; omit for listen 127.0.0.1:27042." } },
-                              @"required": @[], @"additionalProperties": @NO } },
     ];
 }
 
 + (NSDictionary *)callTool:(NSString *)name arguments:(NSDictionary *)args {
     if ([name isEqualToString:@"utilities_status"]) {
-        NSMutableDictionary *status = [[FKUtilities status] mutableCopy];
-        status[@"ok"] = @YES;
-        status[@"discovered"] = [FKUtilities discoveredLibraries];
-        return status;
+        return @{ @"ok": @YES,
+                  @"web_inspector": [FKUtilities webInspectorStatus],
+                  @"hooks": [FKRuntimeKit activeHooks],
+                  @"modules": @([FKRuntimeKit modules].count),
+                  @"traffic": [FKRuntimeKit networkHistory:1],
+                  @"native": @YES };
     }
     if ([name isEqualToString:@"web_inspector"]) {
         if ([args[@"enabled"] respondsToSelector:@selector(boolValue)]) {
@@ -505,21 +495,6 @@ static FKFLEXGestureTarget *gFLEXGestureTarget = nil;
             if ([args[@"apply"] boolValue]) [FKUtilities applyWebInspectorToOpenWebViews];
         }
         return @{ @"ok": @YES, @"status": [FKUtilities webInspectorStatus] };
-    }
-    if ([name isEqualToString:@"flex"]) {
-        NSString *action = args[@"action"] ?: @"status";
-        if ([action isEqualToString:@"load"]) return [FKUtilities loadFLEXAtPath:args[@"path"] show:YES];
-        if ([action isEqualToString:@"show"]) return [FKUtilities showFLEX];
-        if ([action isEqualToString:@"hide"]) return [FKUtilities hideFLEX];
-        return @{ @"ok": @YES, @"status": [FKUtilities status][@"flex"] };
-    }
-    if ([name isEqualToString:@"frida"]) {
-        NSString *action = args[@"action"] ?: @"status";
-        if ([action isEqualToString:@"load"])
-            return [FKUtilities loadFridaGadgetAtPath:args[@"path"] config:args[@"config"]];
-        if ([action isEqualToString:@"config"])
-            return [FKUtilities writeFridaConfig:args[@"config"] ?: @{}];
-        return @{ @"ok": @YES, @"status": [FKUtilities fridaStatus] };
     }
     return nil;
 }
