@@ -812,6 +812,8 @@ static void FKRecordNetwork(NSURLRequest *request, NSURLResponse *response,
 @end
 
 
+@implementation FKRuntimeKit (Explorer)
+
 #pragma mark - Heap stats and references
 
 + (NSDictionary *)heapClassCounts:(NSInteger)limit {
@@ -910,6 +912,8 @@ static void FKRecordNetwork(NSURLRequest *request, NSURLResponse *response,
     });
     return @{ @"ok": @YES, @"views": @(rects.count), @"seconds": @(seconds) };
 }
+
+@end
 
 #pragma mark - Notifications
 
