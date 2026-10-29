@@ -402,4 +402,93 @@ static id FKCoerceValue(id value, NSString *type) {
     return FKOk(@{ @"requests": [[FKHTTPServer sharedServer] recentRequestsWithLimit:limit] });
 }
 
+#pragma mark - Containers and self test
+
++ (NSDictionary *)appContainers {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSMutableArray *containers = [NSMutableArray array];
+    NSArray *pairs = @[
+        @[ @"/var/mobile/Containers/Data/Application", @"data" ],
+        @[ @"/var/containers/Bundle/Application", @"bundle" ],
+        @[ @"/var/mobile/Containers/Shared/AppGroup", @"group" ],
+    ];
+    for (NSArray *pair in pairs) {
+        NSString *root = pair[0];
+        NSString *kind = pair[1];
+        NSArray *entries = [fm contentsOfDirectoryAtPath:root error:nil];
+        for (NSString *uuid in entries) {
+            NSString *path = [root stringByAppendingPathComponent:uuid];
+            NSString *identifier = nil;
+            NSArray *candidates = kind == nil ? @[] : @[
+                [path stringByAppendingPathComponent:@".com.apple.mobile_container_manager.metadata.plist"],
+                [path stringByAppendingPathComponent:@"PluginKitPlugin/.com.apple.mobile_container_manager.metadata.plist"],
+            ];
+            for (NSString *plistPath in candidates) {
+                NSDictionary *metadata = [NSDictionary dictionaryWithContentsOfFile:plistPath];
+                if ([metadata[@"MCMMetadataIdentifier"] isKindOfClass:[NSString class]]) {
+                    identifier = metadata[@"MCMMetadataIdentifier"];
+                }
+                if (identifier) break;
+            }
+            [containers addObject:@{ @"kind": kind, @"uuid": uuid, @"path": path,
+                                     @"identifier": identifier ?: @"unknown" }];
+        }
+    }
+    BOOL denied = (containers.count == 0);
+    return FKOk(@{ @"count": @(containers.count), @"containers": containers,
+                   @"note": denied ? @"No containers visible: the sandbox only exposes this app's own container." : @"" });
+}
+
++ (NSDictionary *)selfTest {
+    NSMutableArray *checks = [NSMutableArray array];
+    NSString *root = [NSTemporaryDirectory() stringByAppendingPathComponent:@"forgekit-selftest"];
+    [[NSFileManager defaultManager] removeItemAtPath:root error:nil];
+    [[NSFileManager defaultManager] createDirectoryAtPath:root withIntermediateDirectories:YES attributes:nil error:nil];
+
+    void (^check)(NSString *, BOOL, NSString *) = ^(NSString *name, BOOL passed, NSString *detail) {
+        [checks addObject:@{ @"check": name, @"passed": @(passed), @"detail": detail ?: @"" }];
+    };
+
+    NSString *file = [root stringByAppendingPathComponent:@"sample.txt"];
+    NSString *payload = @"forgekit self test\nsecond line";
+    BOOL wrote = FKWriteDataAtomically([payload dataUsingEncoding:NSUTF8StringEncoding], file, NULL);
+    NSString *readBack = [NSString stringWithContentsOfFile:file encoding:NSUTF8StringEncoding error:nil];
+    check(@"write+read", wrote && [readBack isEqualToString:payload], file);
+
+    NSArray *listing = FKDirectoryList(root, YES, NULL);
+    check(@"list", listing.count >= 1, [NSString stringWithFormat:@"%lu entries", (unsigned long)listing.count]);
+
+    NSString *zip = [root stringByAppendingPathComponent:@"bundle.zip"];
+    NSError *zipError = nil;
+    BOOL zipped = [FKZip createArchiveAtPath:zip fromPaths:@[file] error:&zipError];
+    check(@"zip.create", zipped, zipError.localizedDescription ?: zip);
+
+    NSString *unzipped = [root stringByAppendingPathComponent:@"out"];
+    NSError *unzipError = nil;
+    BOOL unzippedOK = [FKZip extractArchiveAtPath:zip toDirectory:unzipped error:&unzipError];
+    NSString *extracted = [NSString stringWithContentsOfFile:[unzipped stringByAppendingPathComponent:@"sample.txt"]
+                                                    encoding:NSUTF8StringEncoding error:nil];
+    check(@"zip.extract", unzippedOK && [extracted isEqualToString:payload], unzipError.localizedDescription ?: unzipped);
+
+    NSString *jsError = nil;
+    id jsResult = [FKRuntime evaluateScript:@"1 + 2" error:&jsError];
+    check(@"javascript", [jsResult respondsToSelector:@selector(intValue)] && [jsResult intValue] == 3, jsError ?: [jsResult description]);
+
+    NSArray *keychain = FKKeychainItems(@"generic");
+    check(@"keychain", YES, [NSString stringWithFormat:@"%lu generic items", (unsigned long)keychain.count]);
+
+    NSDictionary *tree = [FKRuntime viewTreeWithDepth:4 maxNodes:500];
+    check(@"ui.tree", [tree[@"tree"] isKindOfClass:[NSDictionary class]],
+          [NSString stringWithFormat:@"%@ nodes", tree[@"nodes"] ?: @"?"]);
+
+    NSDictionary *status = [self status];
+    check(@"server", YES, [NSString stringWithFormat:@"running=%@", status[@"server"][@"running"]]);
+
+    [[NSFileManager defaultManager] removeItemAtPath:root error:nil];
+
+    NSInteger failed = 0;
+    for (NSDictionary *entry in checks) if (![entry[@"passed"] boolValue]) failed++;
+    return FKOk(@{ @"passed": @(checks.count - failed), @"failed": @(failed), @"checks": checks });
+}
+
 @end

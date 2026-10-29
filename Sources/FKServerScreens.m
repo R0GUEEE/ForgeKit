@@ -197,6 +197,7 @@ static UIImage *FKQRCodeImage(NSString *string, CGFloat scale) {
 }
 
 - (void)refresh {
+    if (![NSThread isMainThread]) { FKRunOnMain(^{ [self refresh]; }); return; }
     FKHTTPServer *server = [FKHTTPServer sharedServer];
     BOOL running = server.isRunning;
     self.statusLabel.text = running ? @"Running" : @"Stopped";

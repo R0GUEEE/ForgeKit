@@ -139,6 +139,8 @@ static NSInteger FKIntArg(NSDictionary *args, NSString *key, NSInteger fallback)
         @{}, @[]);
     add(@"app_dylib_load", @"dlopen a dylib inside the process (needs a valid signature or jailbreak).",
         @{ @"path": @{ @"type": @"string" } }, @[@"path"]);
+    add(@"app_containers", @"Enumerate app data/bundle containers with their bundle identifiers (jailbroken or entitled processes).",
+        @{}, @[]);
 
     add(@"runtime_eval", @"Evaluate JavaScript in a JSC context with the fk.* filesystem bridge.",
         @{ @"source": @{ @"type": @"string" } }, @[@"source"]);
@@ -174,6 +176,8 @@ static NSInteger FKIntArg(NSDictionary *args, NSString *key, NSInteger fallback)
     add(@"server_stop", @"Stop the HTTP/MCP server.", @{}, @[]);
     add(@"server_log", @"Recent HTTP requests.",
         @{ @"limit": @{ @"type": @"integer" } }, @[]);
+    add(@"devkit_selftest", @"Exercise filesystem, zip, JavaScript, keychain and UI paths; returns per-check results.",
+        @{}, @[]);
 
     return tools;
 }
@@ -213,6 +217,7 @@ static NSInteger FKIntArg(NSDictionary *args, NSString *key, NSInteger fallback)
         if ([name isEqualToString:@"app_keychain"]) return [self keychain:args];
         if ([name isEqualToString:@"app_cookies"]) return FKOk(@{ @"cookies": FKHTTPCookies() });
         if ([name isEqualToString:@"app_dylib_load"]) return [self dylibLoad:args];
+        if ([name isEqualToString:@"app_containers"]) return [self appContainers];
 
         if ([name isEqualToString:@"runtime_eval"]) return [self runtimeEval:args];
         if ([name isEqualToString:@"runtime_classes"]) return [self runtimeClasses:args];
@@ -233,6 +238,7 @@ static NSInteger FKIntArg(NSDictionary *args, NSString *key, NSInteger fallback)
         if ([name isEqualToString:@"server_start"]) return [self serverStart:args];
         if ([name isEqualToString:@"server_stop"]) { [[FKHTTPServer sharedServer] stop]; return FKOk(@{ @"running": @NO }); }
         if ([name isEqualToString:@"server_log"]) return [self serverLog:args];
+        if ([name isEqualToString:@"devkit_selftest"]) return [self selfTest];
 
         return FKFail([NSString stringWithFormat:@"unknown tool %@", name]);
     } @catch (NSException *exception) {

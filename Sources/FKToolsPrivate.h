@@ -30,4 +30,6 @@
 + (NSDictionary *)logWithArgs:(NSDictionary *)args;
 + (NSDictionary *)serverStart:(NSDictionary *)args;
 + (NSDictionary *)serverLog:(NSDictionary *)args;
++ (NSDictionary *)appContainers;
++ (NSDictionary *)selfTest;
 @end
