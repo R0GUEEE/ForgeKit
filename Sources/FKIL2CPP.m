@@ -77,6 +77,8 @@ typedef struct {
     void (*gc_enable)(void);
     void (*class_init)(Il2CppClass *);
     int (*class_is_subclass_of)(Il2CppClass *, Il2CppClass *, BOOL);
+    uint32_t (*gchandle_new)(Il2CppObject *, BOOL);
+    void (*gchandle_free)(uint32_t);
 } FKIL2CPPApi;
 
 static FKIL2CPPApi gAPI;
@@ -149,6 +151,8 @@ static BOOL FKIL2CPPResolve(void) {
     FKSYM(gc_enable, "il2cpp_gc_enable");
     FKSYM(class_init, "il2cpp_class_init");
     FKSYM(class_is_subclass_of, "il2cpp_class_is_subclass_of");
+    FKSYM(gchandle_new, "il2cpp_gchandle_new");
+    FKSYM(gchandle_free, "il2cpp_gchandle_free");
 #undef FKSYM
 
     NSMutableArray *missing = [NSMutableArray array];
@@ -854,6 +858,7 @@ static void *FKMakeReturnStub(NSInteger kind, uint64_t value) {
 
     void *original = FKMethodCodePointer(method);
     if (!original) return @{ @"ok": @NO, @"error": @"cannot resolve method code pointer" };
+    uint32_t lastStringHandle = 0;
 
     NSString *normalized = [mode.lowercaseString isEqualToString:@"redirect"] ? @"redirect" :
                            ([mode.lowercaseString isEqualToString:@"nop"] ? @"nop" : @"return");
@@ -895,7 +900,10 @@ static void *FKMakeReturnStub(NSInteger kind, uint64_t value) {
         } else if (typeEnum == 0x0e) {
             if (!gAPI.string_new) return @{ @"ok": @NO, @"error": @"string patching unavailable" };
             Il2CppString *string = gAPI.string_new([value description].UTF8String);
+            uint32_t handle = 0;
+            if (gAPI.gchandle_new) handle = gAPI.gchandle_new((Il2CppObject *)string, YES);
             target = FKMakeReturnStub(1, (uint64_t)(uintptr_t)string);
+            lastStringHandle = handle;
         } else {
             return @{ @"ok": @NO, @"error": [NSString stringWithFormat:@"unsupported return type %@", FKTypeName(returnType)] };
         }
@@ -910,7 +918,8 @@ static void *FKMakeReturnStub(NSInteger kind, uint64_t value) {
                               @"mode": normalized,
                               @"original": [NSValue valueWithPointer:original],
                               @"stub": [NSValue valueWithPointer:target],
-                              @"method_ptr": [NSValue valueWithPointer:method] };
+                              @"method_ptr": [NSValue valueWithPointer:method],
+                              @"gchandle": @(lastStringHandle) };
     [gPatches addObject:record];
     FKLog(@"patch %@.%@ [%@]", record[@"class"], methodName, normalized);
     return @{ @"ok": @YES, @"class": record[@"class"], @"method": methodName,

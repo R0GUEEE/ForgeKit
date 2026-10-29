@@ -4,6 +4,7 @@
 
 #import "ForgeKit.h"
 #import "FKToolsPrivate.h"
+#import "FKIL2CPP.h"
 #import <dlfcn.h>
 
 static NSDictionary *FKOk(NSDictionary *payload) {
@@ -371,6 +372,7 @@ static id FKCoerceValue(id value, NSString *type) {
                       @"url": [NSString stringWithFormat:@"http://%@:%u/mcp", FKLanAddress(), server.port],
                       @"token_masked": masked, @"requires_token": @([FKPrefs boolForKey:@"requireToken" defaultValue:YES]) },
         @"panel": @{ @"visible": @([[FKPanel sharedPanel] isVisible]), @"gesture": @"long-press status bar clock" },
+        @"il2cpp": @{ @"available": @([FKIL2CPP available]), @"detail": [FKIL2CPP statusText] },
         @"tools": @([FKTools toolDefinitions].count),
         @"memory": FKHumanSize(FKResidentMemory()),
     });
