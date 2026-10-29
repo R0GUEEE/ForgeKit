@@ -14,7 +14,7 @@ http://<device-ip>:8787/mcp            →   MCP endpoint (bearer token)
 http://<device-ip>:8787/?token=<token> →   web dashboard
 ```
 
-Built binary: `ForgeKit.dylib` — arm64 + arm64e, iOS 14.0+, 932,912 bytes.
+Built binary: `ForgeKit.dylib` — arm64, iOS 14.0+.
 
 ---
 
@@ -73,10 +73,9 @@ ln -sf /usr/bin/ld64.lld /opt/theos/toolchain/linux/iphone/bin/ld
 
 export THEOS=/opt/theos
 make clean
-make TARGET=iphone:clang:16.5:14.0 ARCHS=arm64  DEBUG=0 OPTFLAG=-O0 -j1
-make TARGET=iphone:clang:16.5:14.0 ARCHS=arm64e DEBUG=0 OPTFLAG=-O0 -j1
-python3 tools/make-fat.py ForgeKit.dylib \
-  .theos/obj/arm64/ForgeKit.dylib .theos/obj/arm64e/ForgeKit.dylib
+make TARGET=iphone:clang:16.5:14.0 ARCHS=arm64 DEBUG=0 OPTFLAG=-O0 -j1
+cp .theos/obj/arm64/ForgeKit.dylib ForgeKit.dylib
+./tools/make-deb.sh
 ```
 
 On Linux the Makefile disables Theos modules (`ForgeKit_USE_MODULES = 0`) and Apple's

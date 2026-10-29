@@ -3,7 +3,7 @@
 # binary works whether it is injected by a sideloader or by a jailbreak tweak loader.
 
 TARGET := iphone:clang:latest:14.0
-ARCHS = arm64 arm64e
+ARCHS = arm64
 
 include $(THEOS)/makefiles/common.mk
 

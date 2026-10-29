@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$ROOT/build"
 xcrun --sdk iphoneos clang \
   -isysroot "$SDK" \
-  -arch arm64 -arch arm64e \
+  -arch arm64 \
   -miphoneos-version-min=14.0 \
   -fobjc-arc -O2 -fvisibility=hidden -dynamiclib \
   -install_name @rpath/ForgeKit.dylib \
@@ -16,5 +16,5 @@ xcrun --sdk iphoneos clang \
   -framework Foundation -framework UIKit -framework CoreGraphics \
   -framework QuartzCore -framework JavaScriptCore -framework Security \
   -framework CoreImage -framework AVFoundation -lsqlite3 -lz
-lipo -info "$ROOT/build/ForgeKit.dylib"
+file "$ROOT/build/ForgeKit.dylib"
 echo "built $ROOT/build/ForgeKit.dylib"
