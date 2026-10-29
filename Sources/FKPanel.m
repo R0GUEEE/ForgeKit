@@ -3,6 +3,7 @@
 //
 
 #import "ForgeKit.h"
+#import <QuartzCore/QuartzCore.h>
 #import "FKPanelScreens.h"
 #import "FKUtilities.h"
 #import "FKRuntimeKit.h"
