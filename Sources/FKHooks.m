@@ -66,6 +66,10 @@ static void FKForgeKitInitialize(void) {
             FKInstallGesturesOnAllWindows();
             FKLog(@"ForgeKit %@ loaded into %@ (%@)", FKVersionString, FKAppIdentifier(), FKDeviceModelIdentifier());
 
+            if ([FKPrefs boolForKey:@"volumeTrigger" defaultValue:YES]) {
+                [[FKVolumeTrigger sharedTrigger] start];
+            }
+
             if ([FKPrefs boolForKey:@"autoStart" defaultValue:NO]) {
                 NSError *error = nil;
                 uint16_t port = (uint16_t)[FKPrefs integerForKey:@"port" defaultValue:8787];

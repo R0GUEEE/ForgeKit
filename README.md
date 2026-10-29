@@ -9,7 +9,7 @@ MobileSubstrate, ElleKit or libhooker). Every method replacement goes through th
 Objective-C runtime, so the same binary also works on a jailbroken device.
 
 ```
-Long-press the clock in the status bar →   panel opens
+Long-press the clock, or volume up → down  →   panel opens
 http://<device-ip>:8787/mcp            →   MCP endpoint (bearer token)
 http://<device-ip>:8787/?token=<token> →   web dashboard
 ```
@@ -22,7 +22,7 @@ Built binary: `ForgeKit.dylib` — arm64 + arm64e, iOS 14.0+, 932,912 bytes.
 
 | Area | Capability |
 |---|---|
-| Hidden panel | **Long-press the time** in the status bar. The clock view is located by its text (12/24-hour and locale formats) or class, so the hot zone tracks the real clock frame; a top-left status rectangle is used when the clock is not rendered. Opens a window above the app at `UIWindowLevelAlert + 100`. |
+| Hidden panel | **Long-press the time** in the status bar, or press **volume up then volume down**. The clock view is located by its text (12/24-hour and locale formats) or class, so the hot zone tracks the real clock frame; a top-left status rectangle is used when the clock is not rendered. Opens a window above the app at `UIWindowLevelAlert + 100`. |
 | File browser | Container/root navigation, search, swipe rename/delete, context menus, text editor with save, hex viewer, image viewer, plist viewer/editor, zip create/extract, share sheet, chmod, POSIX attributes. |
 | App root management | Bundle, data container, Documents, Library, tmp, app-group containers, `/`, `/var`, `/var/mobile`, bundle/data container roots, optional `/var/jb`. Container enumeration across the device when the sandbox permits it. |
 | App introspection | Info.plist, entitlements from the code signature and embedded profile, URL schemes, Mach-O dependencies/rpaths for the app, Frameworks and PlugIns, loaded images, keychain items, HTTP cookies. |
@@ -110,6 +110,10 @@ Without it the server still binds and works from Safari on the device
   coordinates and inset by 4 pt. If the app hides the status bar, the top-left
   status-area rectangle is used instead (can be disabled in Settings). Hold
   duration, haptics and the fallback are configurable.
+* **Volume gesture** — press volume up, then volume down, within 1.2 s (0.8 / 1.2 / 2.0
+  selectable). Uses the ambient audio session, so it never interrupts playback. If the
+  trigger arms while volume is at 0 % or 100 % it nudges the level to the middle once,
+  because an already-maxed "up" press emits no change event.
 * **Files** — starts in the app container. Toolbar: roots, go-to-path, hidden
   files, sort. Long-press a row for open / rename / duplicate / compress / share /
   info / delete. Text-like files open in an editor with Save; everything else
@@ -118,7 +122,7 @@ Without it the server still binds and works from Safari on the device
   token, scan the QR code, open the dashboard, inspect the request log.
 * **Runtime** — evaluate JavaScript with `fk.read`, `fk.write`, `fk.list`,
   `fk.stat`, `fk.info`, `fk.log`, `fk.sleep`.
-* **Settings** — hold duration, haptics, clock-area fallback, token requirement,
+* **Settings** — hold duration, haptics, volume trigger + window, clock-area fallback, token requirement,
   start-on-launch, port, token regeneration, log clearing.
 
 ---
@@ -357,6 +361,10 @@ the app's touch handling are untouched.
   token like a password. Regenerate it from Network or Settings.
 * **iOS 14+**. `UIScene` is required for window placement; apps that still run a
   single legacy window fall back to `UIScreen` bounds.
+* **Volume events are not a public API.** The trigger observes the system's
+  AVSystemController change notification (by string name) with a KVO fallback on
+  `AVAudioSession.outputVolume`; both are best-effort and can be muted by other audio
+  routes. It defaults on; the Settings toggle disarms it and deactivates the session.
 * **Shell scope.** The shell sees exactly what the app sees; `containers` only
   enumerates other apps on a jailbroken device or with container entitlements.
   The TCP listener is unauthenticated by design (loopback default); LAN binding is

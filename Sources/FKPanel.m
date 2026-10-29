@@ -244,7 +244,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
     hint.textColor = [UIColor secondaryLabelColor];
     NSString *port = [NSString stringWithFormat:@"%ld", (long)[FKPrefs integerForKey:@"port" defaultValue:8787]];
     hint.text = [NSString stringWithFormat:
-                 @"Long-press the time in the status bar to open this panel.\n"
+                 @"Long-press the time in the status bar, or press volume up then down.\n"
                  @"MCP endpoint: http://%@:%@/mcp\n"
                  @"Dashboard: http://%@:%@/?token=%@",
                  FKLanAddress(), port, FKLanAddress(), port, [FKPrefs token]];

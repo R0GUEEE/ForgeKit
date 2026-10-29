@@ -181,6 +181,13 @@ FOUNDATION_EXPORT void FKPresentAlert(NSString *title, NSString *message);
 + (instancetype)browserAtPath:(NSString *)path;
 @end
 
+@interface FKVolumeTrigger : NSObject
++ (instancetype)sharedTrigger;
+@property (nonatomic, readonly, getter=isRunning) BOOL running;
+- (void)start;
+- (void)stop;
+@end
+
 @interface FKPanel : NSObject
 + (instancetype)sharedPanel;
 @property (nonatomic, readonly, getter=isVisible) BOOL visible;

@@ -235,6 +235,16 @@
         @{ @"title": @"Haptic feedback", @"subtitle": @"Vibrate when the panel opens",
            @"toggle": ^(BOOL on) { save(@"haptics", on); },
            @"toggleValue": @([FKPrefs boolForKey:@"haptics" defaultValue:YES]) },
+        @{ @"title": @"Volume up → down", @"subtitle": @"Press volume up, then down, to open the panel",
+           @"toggle": ^(BOOL on) {
+               [FKPrefs setBool:on forKey:@"volumeTrigger"];
+               if (on) [[FKVolumeTrigger sharedTrigger] start];
+               else [[FKVolumeTrigger sharedTrigger] stop];
+           },
+           @"toggleValue": @([FKPrefs boolForKey:@"volumeTrigger" defaultValue:YES]) },
+        @{ @"title": @"Volume sequence window", @"subtitle": [NSString stringWithFormat:@"%.1f s", [FKPrefs doubleForKey:@"volumeWindow" defaultValue:1.2]],
+           @"chevron": @YES,
+           @"action": ^{ [weakSelf chooseVolumeWindow]; } },
         @{ @"title": @"Clock-area fallback", @"subtitle": @"Use the top-left status bar area when the clock is not visible",
            @"toggle": ^(BOOL on) { save(@"clockFallback", on); },
            @"toggleValue": @([FKPrefs boolForKey:@"clockFallback" defaultValue:YES]) },
@@ -286,6 +296,23 @@
         NSString *title = [NSString stringWithFormat:@"%.1f s", value.doubleValue];
         [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
             [FKPrefs setDouble:value.doubleValue forKey:@"gestureDuration"];
+            [self rebuild];
+        }]];
+    }
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    sheet.popoverPresentationController.sourceView = self.view;
+    sheet.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds), 1, 1);
+    [self presentViewController:sheet animated:YES completion:nil];
+}
+
+- (void)chooseVolumeWindow {
+    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"Volume sequence window"
+                                                                   message:nil
+                                                            preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSNumber *value in @[@0.8, @1.2, @2.0]) {
+        NSString *title = [NSString stringWithFormat:@"%.1f s", value.doubleValue];
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+            [FKPrefs setDouble:value.doubleValue forKey:@"volumeWindow"];
             [self rebuild];
         }]];
     }
