@@ -262,3 +262,36 @@ because ForgeKit is injected after signing.
 * The reference starts its server from a constructor unconditionally. ForgeKit starts
   it from `shell_server` or the Shell screen, so a host app does not expose a port
   unless asked.
+
+
+---
+
+## 10. v1.6.0: blank screens, navigation, utilities
+
+### Blank Runtime and Network screens
+
+Root cause: both screens live in `FKServerScreens.m` and build a `UIStackView` with
+`[[UIStackView alloc] init]` (zero frame) then pin it with constraints, without setting
+`translatesAutoresizingMaskIntoConstraints = NO`. Auto Layout therefore kept the
+autoresizing mask at a zero-sized frame, so the scroll view had empty content — a blank
+screen. Fix: the stack is constraint-driven, and the scroll view uses
+`contentLayoutGuide` for the stack edges and `frameLayoutGuide` for its width. The same
+pattern was corrected in the script console.
+
+### Navigation
+
+`FKTextViewController` and `FKHexViewController` put their Share button in
+`leftBarButtonItem`, which **replaces the back button** — the only way out was the edge
+swipe. Both now keep the left slot for the system back button and stack their actions on
+the right (`Save`/`Share`, `More`/`Share`), with a consistent `largeTitleDisplayMode`
+across viewers.
+
+### Utilities
+
+FLEX and the Frida gadget are runtime-loaded (`dlopen`) from bundle `Frameworks/`, the
+bundle root, `Documents/ForgeKit/dylibs`, `/usr/lib` or `/var/jb/usr/lib`; a jailed
+process can only load signed images, so failures surface the real `dlerror`. The WebKit
+inspector is native: the same technique as WebInspectEnabler — swizzle the `WKWebView`
+load methods and force `inspectable` (public on iOS 16.4+, private preference fallback).
+Four MCP tools were added (`utilities_status`, `web_inspector`, `flex`, `frida`), bringing
+the total to 91.

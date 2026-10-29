@@ -164,7 +164,7 @@ curl -s http://192.168.1.42:8787/mcp \
        "params":{"name":"devkit_selftest","arguments":{}}}'
 ```
 
-### Tools (87)
+### Tools (91)
 
 **Filesystem** — `fs_roots`, `fs_list`, `fs_stat`, `fs_read`, `fs_write`,
 `fs_mkdir`, `fs_delete`, `fs_move`, `fs_copy`, `fs_search`, `fs_chmod`,
@@ -195,6 +195,8 @@ curl -s http://192.168.1.42:8787/mcp \
 `stop_ui_lua`, `ui_lua_status`, `toggle_menu`
 
 **Shell (4)** — `shell`, `shell_help`, `shell_status`, `shell_server`
+
+**Utilities (4)** — `utilities_status`, `web_inspector`, `flex`, `frida`
 
 Paths accept `~`, `$APP`, `$CONTAINER`, `$DOCS`, `$LIB`, `$TMP`, or relative
 paths (resolved against the app container).
@@ -255,6 +257,40 @@ is trusted, or use the token-protected HTTP/MCP path instead.
 
 `containers` lists other apps' data/bundle containers when the sandbox exposes
 their metadata. Transfers cap a single file at 3 MB and the whole response at 4 MB.
+
+---
+
+## Utilities: FLEX, Frida, WebKit inspector
+
+These three helpers are **loaded at runtime**, not linked. That is deliberate: AllFLEXing
+is 3.5 MB and the Frida gadget is 62 MB, and a dylib cannot hand executable bytes to
+`dlopen`. Search order for both:
+
+```
+<App>.app/Frameworks/<name>   <App>.app/<name>
+Documents/ForgeKit/dylibs/<name>   /usr/lib/<name>   /var/jb/usr/lib/<name>
+```
+
+On a jailed device the helper must be signed into the app bundle (add it in the
+sideloader next to ForgeKit), otherwise `dlopen` reports a code-signing error and the
+Utilities screen shows it verbatim.
+
+| Utility | Behaviour |
+|---|---|
+| **FLEX** (`AllFLEXing.dylib` / `libFLEX.dylib`) | `dlopen`, resolve `FLEXManager`, present/hide the explorer. Panel → Utilities → *Load and show explorer*. |
+| **WebKit inspector** | Native implementation of WebInspectEnabler: swizzles `WKWebView` `loadRequest:`, `loadHTMLString:baseURL:` and `loadFileURL:…` and forces `inspectable = YES` (public API on iOS 16.4+, private preference fallback below). Toggle in Utilities, or `web_inspector {enabled:true}`. |
+| **Frida gadget** | `dlopen` the gadget, after writing `FridaGadget.config` (listen `127.0.0.1:27042`, runtime `qjs`, `on_load: resume`). Panel → Utilities → *Load gadget*; the listener belongs to Frida, ForgeKit only loads and reports it. |
+
+MCP:
+
+```jsonc
+{"name":"flex","arguments":{"action":"load"}}        // or show / hide / status
+{"name":"frida","arguments":{"action":"load","config":{"interaction":{"type":"listen","port":27042}}}}
+{"name":"web_inspector","arguments":{"enabled":true,"apply":true}}
+```
+
+Status for all three (including every candidate path that was probed) is returned by
+`utilities_status`.
 
 ---
 
@@ -326,6 +362,8 @@ Sources/
   FKShellServer.m     loopback TCP transport (client.py compatible)
   FKShellTools.m      4 shell MCP tools
   FKShellScreens.m    terminal UI
+  FKUtilities.h/.m    FLEX + Frida loaders, WKWebView inspector swizzles, 4 tools
+  FKUtilityScreens.m  Utilities screen
   FKToolsPrivate.h    shared internal declarations
   FKHTTPServer.m      socket server, routing, auth, request log
   FKMCP.m             JSON-RPC 2.0 / MCP semantics
@@ -361,6 +399,9 @@ the app's touch handling are untouched.
   token like a password. Regenerate it from Network or Settings.
 * **iOS 14+**. `UIScene` is required for window placement; apps that still run a
   single legacy window fall back to `UIScreen` bounds.
+* **Helper dylibs must be signed into the app.** A jailed process cannot `dlopen`
+  unsigned code; `flex`/`frida` return the exact `dlerror` when that happens. FLEX and
+  the Frida gadget are not embedded in ForgeKit.
 * **Volume events are not a public API.** The trigger observes the system's
   AVSystemController change notification (by string name) with a KVO fallback on
   `AVAudioSession.outputVolume`; both are best-effort and can be muted by other audio
