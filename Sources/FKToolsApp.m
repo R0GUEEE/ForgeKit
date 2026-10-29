@@ -73,9 +73,6 @@ static id FKCoerceValue(id value, NSString *type) {
     return value;
 }
 
-@interface FKTools (Application)
-@end
-
 @implementation FKTools (Application)
 
 #pragma mark - Application introspection

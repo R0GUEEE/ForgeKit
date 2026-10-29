@@ -13,6 +13,7 @@
 #import <zlib.h>
 #import <objc/runtime.h>
 #import <dlfcn.h>
+#import <mach-o/dyld.h>
 
 NSString * const FKVersionString = @"1.0.0";
 NSString * const FKServerDidChangeNotification = @"FKServerDidChangeNotification";
@@ -259,20 +260,6 @@ NSDictionary *FKEntitlements(void) {
         NSDictionary *signedOnes = FKEntitlementsFromMachO();
         if (signedOnes) [merged addEntriesFromDictionary:signedOnes];
 
-        SecTaskRef task = SecTaskCreateFromSelf(kCFAllocatorDefault);
-        if (task) {
-            NSArray *keys = @[@"application-identifier", @"com.apple.developer.team-identifier",
-                              @"get-task-allow", @"keychain-access-groups",
-                              @"com.apple.security.application-groups"];
-            for (NSString *key in keys) {
-                if (merged[key]) continue;
-                CFTypeRef value = SecTaskCopyValueForEntitlement(task, (__bridge CFStringRef)key, NULL);
-                if (value) {
-                    merged[key] = (__bridge_transfer id)value;
-                }
-            }
-            CFRelease(task);
-        }
         cached = merged.count ? [merged copy] : @{};
     });
     return cached;
@@ -524,9 +511,9 @@ NSDictionary *FKFileAttributes(NSString *path) {
         if (destination) info[@"destination"] = destination;
     }
     NSNumber *fileSize = attributes[NSFileSize];
-    info[@"type"] = info[@"directory"].boolValue ? @"directory"
+    info[@"type"] = [info[@"directory"] boolValue] ? @"directory"
                    : ([path.pathExtension.lowercaseString isEqualToString:@"dylib"] ? @"dylib" : @"file");
-    if (!info[@"directory"].boolValue) info[@"extension"] = path.pathExtension ?: @"";
+    if (![info[@"directory"] boolValue]) info[@"extension"] = path.pathExtension ?: @"";
     (void)fileSize;
     return info;
 }
