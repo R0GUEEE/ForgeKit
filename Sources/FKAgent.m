@@ -13,6 +13,21 @@ static id FKAgentJSONValue(NSData *data) {
     return [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
 }
 
+static NSString *FKAgentNormalizedEndpoint(NSString *raw) {
+    NSString *value = [raw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (!value.length) value = @"https://api.openai.com/v1/chat/completions";
+    if (![value.lowercaseString hasPrefix:@"http://"] && ![value.lowercaseString hasPrefix:@"https://"])
+        value = [@"https://" stringByAppendingString:value];
+    while ([value hasSuffix:@"/"]) value = [value substringToIndex:value.length - 1];
+    if ([value rangeOfString:@"chat/completions"].location == NSNotFound) {
+        if ([value hasSuffix:@"/v1"]) value = [value stringByAppendingString:@"/chat/completions"];
+        else if ([value rangeOfString:@"/v1/"].location != NSNotFound)
+            value = [value stringByAppendingString:@"chat/completions"];
+        else value = [value stringByAppendingString:@"/v1/chat/completions"];
+    }
+    return value;
+}
+
 static BOOL FKAgentToolMutates(NSString *name) {
     static NSSet *exact;
     static NSArray *prefixes;
@@ -36,6 +51,7 @@ static BOOL FKAgentToolMutates(NSString *name) {
 
 @implementation FKAgent {
     NSMutableArray<NSDictionary *> *_history;
+    BOOL _toolsDisabled;
     NSLock *_runLock;
     NSMutableArray<NSDictionary *> *_activity;
 }
@@ -54,8 +70,8 @@ static BOOL FKAgentToolMutates(NSString *name) {
         _activity = [NSMutableArray array];
         _runLock = [[NSLock alloc] init];
         _maxSteps = 8;
-        _endpoint = [FKPrefs stringForKey:@"agentEndpoint"
-                                 defaultValue:@"https://api.openai.com/v1/chat/completions"];
+        _endpoint = FKAgentNormalizedEndpoint([FKPrefs stringForKey:@"agentEndpoint"
+                                                            defaultValue:@"https://api.openai.com/v1/chat/completions"]);
         _model = [FKPrefs stringForKey:@"agentModel" defaultValue:@"gpt-4o-mini"];
         _allowMutations = [FKPrefs boolForKey:@"agentAllowMutations" defaultValue:NO];
     }
@@ -103,7 +119,7 @@ static BOOL FKAgentToolMutates(NSString *name) {
 }
 
 - (void)setEndpoint:(NSString *)endpoint {
-    _endpoint = [endpoint copy];
+    _endpoint = FKAgentNormalizedEndpoint(endpoint);
     [FKPrefs setString:_endpoint forKey:@"agentEndpoint"];
 }
 
@@ -155,10 +171,18 @@ static BOOL FKAgentToolMutates(NSString *name) {
 #pragma mark - HTTP
 
 - (NSArray<NSDictionary *> *)toolDefinitionsForAPI {
+    static NSSet *excluded;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        excluded = [NSSet setWithArray:@[@"agent_ask", @"agent_config", @"devkit_projects",
+                                         @"panel_open", @"panel_close", @"server_start",
+                                         @"server_stop", @"server_log", @"devkit_selftest",
+                                         @"devkit_log"]];
+    });
     NSMutableArray *tools = [NSMutableArray array];
     for (NSDictionary *definition in [FKTools toolDefinitions]) {
         NSString *name = definition[@"name"];
-        if (!name.length) continue;
+        if (!name.length || [excluded containsObject:name]) continue;
         [tools addObject:@{
             @"type": @"function",
             @"function": @{ @"name": name,
@@ -174,19 +198,25 @@ static BOOL FKAgentToolMutates(NSString *name) {
         @"model": self.model ?: @"gpt-4o-mini",
         @"messages": messages,
         @"temperature": @0.2,
+        @"stream": @NO,
     } mutableCopy];
-    if (tools.count) {
+    if (tools.count && !_toolsDisabled) {
         payload[@"tools"] = tools;
         payload[@"tool_choice"] = @"auto";
     }
     NSError *error = nil;
     NSData *body = [NSJSONSerialization dataWithJSONObject:payload options:0 error:&error];
     if (!body) return nil;
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:self.endpoint ?: @""]];
+    NSURL *url = [NSURL URLWithString:FKAgentNormalizedEndpoint(self.endpoint)];
+    if (!url) return nil;
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     request.HTTPMethod = @"POST";
     request.timeoutInterval = 90;
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    [request setValue:[NSString stringWithFormat:@"Bearer %@", [FKAgent apiKey]] forHTTPHeaderField:@"Authorization"];
+    [request setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [request setValue:@"ForgeKit/2.3.1" forHTTPHeaderField:@"User-Agent"];
+    NSString *key = [[FKAgent apiKey] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    [request setValue:[NSString stringWithFormat:@"Bearer %@", key] forHTTPHeaderField:@"Authorization"];
     request.HTTPBody = body;
     return request;
 }
@@ -222,16 +252,43 @@ static BOOL FKAgentToolMutates(NSString *name) {
                                         completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         if (error) { completion(nil, self->_activity, error); return; }
         NSInteger status = [response isKindOfClass:[NSHTTPURLResponse class]] ? [(NSHTTPURLResponse *)response statusCode] : 0;
+        NSString *host = response.URL.host ?: @"?";
+        FKLog(@"agent: POST %@ -> HTTP %ld, %lu bytes", response.URL.path ?: @"/", (long)status,
+              (unsigned long)(data.length));
+        if (!data.length && status >= 200 && status < 300 && !self->_toolsDisabled &&
+            [[FKTools toolDefinitions] count] > 0) {
+            // Some OpenAI-compatible gateways return an empty 200 for requests that carry
+            // tool schemas. Retry once without tools so the user still gets an answer.
+            self->_toolsDisabled = YES;
+            FKLog(@"agent: empty 200 with tools, retrying without tool schemas");
+            [self step:step completion:completion];
+            return;
+        }
+        if (!data.length) {
+            NSString *message = [NSString stringWithFormat:
+                                 @"empty response from HTTP %ld at %@ (check the endpoint URL, API key and provider status)",
+                                 (long)status, host];
+            completion(nil, self->_activity, [NSError errorWithDomain:@"ForgeKit.Agent" code:status
+                                                           userInfo:@{ NSLocalizedDescriptionKey: message }]);
+            return;
+        }
         id json = FKAgentJSONValue(data);
         if (![json isKindOfClass:[NSDictionary class]]) {
-            NSString *text = [[NSString alloc] initWithData:data ?: [NSData data] encoding:NSUTF8StringEncoding];
+            NSString *text = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"";
+            if (text.length > 600) text = [[text substringToIndex:600] stringByAppendingString:@"…"];
+            NSString *message = text.length
+                ? [NSString stringWithFormat:@"HTTP %ld from %@: %@", (long)status, host, text]
+                : [NSString stringWithFormat:@"unreadable response: HTTP %ld from %@", (long)status, host];
             completion(nil, self->_activity, [NSError errorWithDomain:@"ForgeKit.Agent" code:status
-                                                           userInfo:@{ NSLocalizedDescriptionKey:
-                                                                           text.length ? text : @"empty response" }]);
+                                                           userInfo:@{ NSLocalizedDescriptionKey: message }]);
             return;
         }
         if (status >= 400) {
-            NSString *message = json[@"error"][@"message"] ?: [NSString stringWithFormat:@"HTTP %ld", (long)status];
+            id errorObject = json[@"error"];
+            NSString *message = nil;
+            if ([errorObject isKindOfClass:[NSDictionary class]]) message = errorObject[@"message"];
+            else if ([errorObject isKindOfClass:[NSString class]]) message = errorObject;
+            if (!message.length) message = [NSString stringWithFormat:@"HTTP %ld from %@", (long)status, host];
             completion(nil, self->_activity, [NSError errorWithDomain:@"ForgeKit.Agent" code:status
                                                            userInfo:@{ NSLocalizedDescriptionKey: message }]);
             return;
@@ -317,6 +374,7 @@ static BOOL FKAgentToolMutates(NSString *name) {
                                              userInfo:@{ NSLocalizedDescriptionKey: @"the agent is already running" }]);
         return;
     }
+    _toolsDisabled = NO;
     [_history addObject:@{ @"role": @"user", @"content": prompt }];
     [_activity removeAllObjects];
     [_runLock unlock];
