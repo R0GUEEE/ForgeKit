@@ -258,10 +258,13 @@ static NSArray<NSDictionary *> *FKClassCache(void) {
 
 static Il2CppClass *FKClassByName(NSString *name) {
     if (!name.length) return NULL;
+    Il2CppClass *shortMatch = NULL;
     for (NSDictionary *entry in FKClassCache()) {
         if ([entry[@"name"] isEqualToString:name]) return (Il2CppClass *)[(NSValue *)entry[@"ptr"] pointerValue];
+        if (!shortMatch && [entry[@"short"] isEqualToString:name])
+            shortMatch = (Il2CppClass *)[(NSValue *)entry[@"ptr"] pointerValue];
     }
-    return NULL;
+    return shortMatch;
 }
 
 static FieldInfo *FKFieldByName(Il2CppClass *klass, NSString *fieldName) {
@@ -682,7 +685,20 @@ static MethodInfo *FKFindMethod(Il2CppClass *klass, NSString *methodName, NSInte
     if (!FKIL2CPPResolve()) return @{ @"ok": @NO, @"error": gLoadError ?: @"IL2CPP unavailable" };
     Il2CppClass *klass = FKClassByName(className);
     if (!klass) return @{ @"ok": @NO, @"error": @"class not found" };
-    MethodInfo *method = FKFindMethod(klass, methodName, MAX(0, overload));
+    MethodInfo *method = NULL;
+    {
+        void *iterator = NULL;
+        const MethodInfo *candidate = NULL;
+        NSInteger seen = 0;
+        while ((candidate = gAPI.class_get_methods(klass, &iterator))) {
+            const char *candidateName = gAPI.method_get_name(candidate);
+            if (!candidateName || ![methodName isEqualToString:[NSString stringWithUTF8String:candidateName]]) continue;
+            uint32_t candidateParams = gAPI.method_get_param_count ? gAPI.method_get_param_count(candidate) : 0;
+            if (candidateParams != (uint32_t)args.count) continue;
+            if (seen++ == MAX(0, overload)) { method = (MethodInfo *)(void *)candidate; break; }
+        }
+    }
+    if (!method) method = FKFindMethod(klass, methodName, MAX(0, overload));
     if (!method) return @{ @"ok": @NO, @"error": [NSString stringWithFormat:@"method not found: %@", methodName] };
     if (pointer && !FKCanRead((const void *)(uintptr_t)pointer, 16))
         return @{ @"ok": @NO, @"error": @"object pointer is not readable" };

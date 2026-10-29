@@ -213,8 +213,9 @@ static NSData *FKInflateData(NSData *input, NSUInteger expectedSize) {
         return @[];
     }
     NSUInteger eocd = NSNotFound;
-    for (NSUInteger i = length - 22; i != NSNotFound && i > (length > 65558 ? length - 65558 : 0); i--) {
-        if (FKReadU32(bytes, i) == 0x06054b50) { eocd = i; break; }
+    NSInteger lowerBound = MAX(0, (NSInteger)length - 65558);
+    for (NSInteger i = (NSInteger)length - 22; i >= lowerBound; i--) {
+        if (FKReadU32(bytes, (NSUInteger)i) == 0x06054b50) { eocd = (NSUInteger)i; break; }
     }
     if (eocd == NSNotFound) {
         if (error) *error = FKZipError(@"end of central directory not found");
@@ -252,8 +253,9 @@ static NSData *FKInflateData(NSData *input, NSUInteger expectedSize) {
     const uint8_t *bytes = data.bytes;
     NSUInteger length = data.length;
     NSUInteger eocd = NSNotFound;
-    for (NSUInteger i = length >= 22 ? length - 22 : 0; i != NSNotFound && i > (length > 65558 ? length - 65558 : 0); i--) {
-        if (FKReadU32(bytes, i) == 0x06054b50) { eocd = i; break; }
+    NSInteger lowerBound = MAX(0, (NSInteger)length - 65558);
+    for (NSInteger i = (NSInteger)length - 22; i >= lowerBound; i--) {
+        if (FKReadU32(bytes, (NSUInteger)i) == 0x06054b50) { eocd = (NSUInteger)i; break; }
     }
     if (eocd == NSNotFound) {
         if (error) *error = FKZipError(@"end of central directory not found");
