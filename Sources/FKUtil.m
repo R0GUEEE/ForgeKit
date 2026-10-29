@@ -692,8 +692,11 @@ NSArray<NSDictionary *> *FKKeychainItems(NSString *itemClass) {
     NSMutableArray<NSDictionary *> *output = [NSMutableArray array];
     for (id candidate in raw) {
         @autoreleasepool {
-            if (![candidate isKindOfClass:[NSDictionary class]]) continue;
-            NSDictionary *item = (NSDictionary *)candidate;
+            // Security may hand back SecCertificateRef values for some classes;
+            // test the CoreFoundation type before sending any Objective-C message.
+            CFTypeRef cfCandidate = (__bridge CFTypeRef)candidate;
+            if (!cfCandidate || CFGetTypeID(cfCandidate) != CFDictionaryGetTypeID()) continue;
+            NSDictionary *item = (__bridge NSDictionary *)cfCandidate;
             NSString *service = FKKeychainScalarString(item[(__bridge id)kSecAttrService]);
             NSString *account = FKKeychainScalarString(item[(__bridge id)kSecAttrAccount]);
             NSString *label = FKKeychainScalarString(item[(__bridge id)kSecAttrLabel]);
