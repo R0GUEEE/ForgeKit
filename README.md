@@ -277,14 +277,14 @@ Utilities screen shows it verbatim.
 
 | Utility | Behaviour |
 |---|---|
-| **FLEX** (`AllFLEXing.dylib` / `libFLEX.dylib`) | `dlopen`, resolve `FLEXManager`, present/hide the explorer. Panel → Utilities → *Load and show explorer*. |
+| **FLEX** | Core: `libFLEX.dylib` (preferred, self-contained) or `AllFLEXing.dylib`. Loader: `FLEXing.dylib` is loaded only when `MSHookMessageEx` (libsubstrate) is present, since it is a Substrate tweak that hooks `UIStatusBarWindow`. On a jailed host the loader is skipped and an equivalent **two-finger long press** gesture is installed instead. Panel → Utilities → *Load and show explorer*. |
 | **WebKit inspector** | Native implementation of WebInspectEnabler: swizzles `WKWebView` `loadRequest:`, `loadHTMLString:baseURL:` and `loadFileURL:…` and forces `inspectable = YES` (public API on iOS 16.4+, private preference fallback below). Toggle in Utilities, or `web_inspector {enabled:true}`. |
 | **Frida gadget** | `dlopen` the gadget, after writing `FridaGadget.config` (listen `127.0.0.1:27042`, runtime `qjs`, `on_load: resume`). Panel → Utilities → *Load gadget*; the listener belongs to Frida, ForgeKit only loads and reports it. |
 
 MCP:
 
 ```jsonc
-{"name":"flex","arguments":{"action":"load"}}        // or show / hide / status
+{"name":"flex","arguments":{"action":"load"}}        // core + loader/gesture, or show / hide / status
 {"name":"frida","arguments":{"action":"load","config":{"interaction":{"type":"listen","port":27042}}}}
 {"name":"web_inspector","arguments":{"enabled":true,"apply":true}}
 ```
@@ -399,6 +399,10 @@ the app's touch handling are untouched.
   token like a password. Regenerate it from Network or Settings.
 * **iOS 14+**. `UIScene` is required for window placement; apps that still run a
   single legacy window fall back to `UIScreen` bounds.
+* **FLEXing needs libsubstrate.** `FLEXing.dylib` links
+  `@executable_path/Frameworks/libsubstrate.dylib`; without a hooking runtime its `dlopen`
+  fails and ForgeKit falls back to its own two-finger long-press gesture. `libFLEX.dylib`
+  alone is enough for the explorer.
 * **Helper dylibs must be signed into the app.** A jailed process cannot `dlopen`
   unsigned code; `flex`/`frida` return the exact `dlerror` when that happens. FLEX and
   the Frida gadget are not embedded in ForgeKit.
