@@ -16,6 +16,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (void)applyWebInspectorToOpenWebViews;
 
 + (NSDictionary *)loadFLEXAtPath:(nullable NSString *)path show:(BOOL)show;
++ (void)installFLEXGesture;
 + (NSDictionary *)showFLEX;
 + (NSDictionary *)hideFLEX;
 

@@ -54,12 +54,26 @@
 
     // FLEX
     NSString *flexPath = [flex[@"search_path"] isKindOfClass:[NSString class]] ? flex[@"search_path"] : @"not found";
+    NSString *loaderPath = [flex[@"loader_path"] isKindOfClass:[NSString class]] ? flex[@"loader_path"] : @"not found";
+    BOOL loaderLoaded = [flex[@"loader_loaded"] boolValue];
+    BOOL substrate = [flex[@"substrate"] boolValue];
+    NSString *loaderDetail = loaderLoaded ? @"loaded (FLEXing gesture active)"
+                            : (![loaderPath isEqualToString:@"not found"]
+                               ? (substrate ? @"present, not loaded" : @"needs libsubstrate — using built-in gesture")
+                               : @"not installed");
     [sections addObject:@{ @"title": @"FLEX", @"rows": @[
         @{ @"title": @"FLEXManager",
            @"subtitle": [flex[@"class_found"] boolValue] ? @"loaded" : @"not loaded" },
-        @{ @"title": @"Library", @"subtitle": flexPath },
+        @{ @"title": @"Core library", @"subtitle": flexPath },
+        @{ @"title": @"Loader (FLEXing)", @"subtitle": [NSString stringWithFormat:@"%@\n%@", loaderPath, loaderDetail] },
+        @{ @"title": @"Two-finger long press", @"subtitle": @"Open FLEX from anywhere (built-in; used when FLEXing cannot load)",
+           @"toggle": ^(BOOL on) {
+               [FKPrefs setBool:on forKey:@"flexGesture"];
+               if (on) [FKUtilities installFLEXGesture];
+           },
+           @"toggleValue": @([FKPrefs boolForKey:@"flexGesture" defaultValue:YES]) },
         @{ @"title": @"Load and show explorer",
-           @"subtitle": @"AllFLEXing.dylib / libFLEX.dylib from Frameworks or Documents",
+           @"subtitle": @"libFLEX.dylib + FLEXing.dylib from Frameworks or Documents",
            @"chevron": @YES,
            @"action": ^{
                NSDictionary *result = [FKUtilities loadFLEXAtPath:nil show:YES];

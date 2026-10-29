@@ -107,11 +107,38 @@ static void FKMakeWebViewInspectable(WKWebView *webView) {
 
 @end
 
+#pragma mark - FLEX gesture
+
+static NSHashTable<UIWindow *> *gFLEXGestureWindows = nil;
+static BOOL gFLEXGestureInstalled = NO;
+static BOOL gFLEXLoaderLoaded = NO;
+
+@interface FKFLEXGestureTarget : NSObject <UIGestureRecognizerDelegate>
+@end
+
+@implementation FKFLEXGestureTarget
+- (void)handleFLEXPress:(UILongPressGestureRecognizer *)gesture {
+    if (gesture.state != UIGestureRecognizerStateBegan) return;
+    if (![FKPrefs boolForKey:@"flexGesture" defaultValue:YES]) return;
+    UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+    [generator impactOccurred];
+    [FKUtilities showFLEX];
+}
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
+shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)other {
+    return YES;
+}
+@end
+
+static FKFLEXGestureTarget *gFLEXGestureTarget = nil;
+
 #pragma mark - Utilities
 
 @interface FKUtilities ()
 + (NSDictionary *)flexStatusInternal;
 + (void)visitWebViews:(UIView *)view;
++ (void)installFLEXGesture;
++ (void)attachFLEXGestureToWindow:(UIWindow *)window;
 @end
 
 @implementation FKUtilities
@@ -168,9 +195,14 @@ static void FKMakeWebViewInspectable(WKWebView *webView) {
 
 + (NSDictionary *)flexStatusInternal {
     Class managerClass = NSClassFromString(@"FLEXManager");
-    NSString *path = FKUtilityFirstExisting(@[@"AllFLEXing.dylib", @"libFLEX.dylib", @"FLEX.dylib"]);
+    NSString *path = FKUtilityFirstExisting(@[@"libFLEX.dylib", @"AllFLEXing.dylib", @"FLEX.dylib"]);
+    NSString *loader = FKUtilityFirstExisting(@[@"FLEXing.dylib"]);
     NSMutableDictionary *status = [@{ @"class_found": @(managerClass != nil),
                                       @"search_path": path ?: [NSNull null],
+                                      @"loader_path": loader ?: [NSNull null],
+                                      @"loader_loaded": @(gFLEXLoaderLoaded),
+                                      @"substrate": @(dlsym(RTLD_DEFAULT, "MSHookMessageEx") != NULL),
+                                      @"gesture_installed": @(gFLEXGestureInstalled),
                                       @"loaded": @(managerClass != nil) } mutableCopy];
     if (managerClass) {
         __block BOOL hidden = YES;
@@ -214,28 +246,102 @@ static void FKMakeWebViewInspectable(WKWebView *webView) {
 }
 
 + (NSDictionary *)loadFLEXAtPath:(NSString *)path show:(BOOL)show {
-    NSString *resolved = path.length ? FKExpandPath(path)
-                                     : FKUtilityFirstExisting(@[@"AllFLEXing.dylib", @"libFLEX.dylib", @"FLEX.dylib"]);
-    if (!resolved) {
-        return @{ @"ok": @NO, @"error": @"FLEX dylib not found",
-                  @"searched": FKUtilitySearchPaths(@[@"AllFLEXing.dylib", @"libFLEX.dylib", @"FLEX.dylib"]) };
+    NSString *core = path.length ? FKExpandPath(path)
+                                 : FKUtilityFirstExisting(@[@"libFLEX.dylib", @"AllFLEXing.dylib", @"FLEX.dylib"]);
+    if (!core) {
+        return @{ @"ok": @NO, @"error": @"libFLEX.dylib not found",
+                  @"searched": FKUtilitySearchPaths(@[@"libFLEX.dylib", @"AllFLEXing.dylib", @"FLEX.dylib"]) };
     }
-    if (![[NSFileManager defaultManager] isReadableFileAtPath:resolved])
-        return @{ @"ok": @NO, @"error": @"FLEX dylib is not readable", @"path": resolved };
-    void *handle = dlopen(resolved.UTF8String, RTLD_NOW | RTLD_LOCAL);
-    if (!handle) {
+    if (![[NSFileManager defaultManager] isReadableFileAtPath:core])
+        return @{ @"ok": @NO, @"error": @"libFLEX is not readable", @"path": core };
+
+    void *coreHandle = dlopen(core.UTF8String, RTLD_NOW | RTLD_LOCAL);
+    if (!coreHandle) {
         const char *error = dlerror();
-        return @{ @"ok": @NO, @"path": resolved,
+        return @{ @"ok": @NO, @"path": core,
                   @"error": error ? [NSString stringWithUTF8String:error] : @"dlopen failed" };
     }
     Class managerClass = NSClassFromString(@"FLEXManager");
+
+    // FLEXing adds the status-bar gesture. It needs libsubstrate; skip it cleanly
+    // when the host has no hooking runtime, and provide our own gesture instead.
+    NSString *loaderPath = FKUtilityFirstExisting(@[@"FLEXing.dylib"]);
+    BOOL substrateAvailable = dlsym(RTLD_DEFAULT, "MSHookMessageEx") != NULL;
+    NSString *loaderError = nil;
+    if (loaderPath && substrateAvailable) {
+        void *loaderHandle = dlopen(loaderPath.UTF8String, RTLD_NOW | RTLD_LOCAL);
+        if (loaderHandle) {
+            gFLEXLoaderLoaded = YES;
+        } else {
+            const char *error = dlerror();
+            loaderError = error ? [NSString stringWithUTF8String:error] : @"dlopen failed";
+        }
+    } else if (loaderPath && !substrateAvailable) {
+        loaderError = @"libsubstrate not present (jailed host); using the built-in gesture";
+    }
+
+    if (!gFLEXLoaderLoaded && [FKPrefs boolForKey:@"flexGesture" defaultValue:YES])
+        [self installFLEXGesture];
+
     NSDictionary *shown = nil;
     if (show && managerClass) shown = [self showFLEX];
-    FKLog(@"FLEX loaded from %@ (class=%@)", resolved, managerClass ? @"yes" : @"no");
-    return @{ @"ok": @YES, @"path": resolved,
-              @"handle": [NSString stringWithFormat:@"%p", handle],
+    FKLog(@"FLEX core=%@ class=%@ loader=%@", core, managerClass ? @"yes" : @"no",
+          gFLEXLoaderLoaded ? @"loaded" : @"built-in gesture");
+
+    return @{ @"ok": @(managerClass != nil), @"path": core,
+              @"handle": [NSString stringWithFormat:@"%p", coreHandle],
               @"class_found": @(managerClass != nil),
+              @"loader": @{ @"path": loaderPath ?: [NSNull null],
+                            @"loaded": @(gFLEXLoaderLoaded),
+                            @"substrate": @(substrateAvailable),
+                            @"error": loaderError ?: [NSNull null] },
+              @"gesture_installed": @(gFLEXGestureInstalled),
               @"shown": shown ?: @{ @"ok": @NO, @"error": @"not requested" } };
+}
+
+#pragma mark FLEX gesture install
+
++ (void)installFLEXGesture {
+    if (gFLEXGestureInstalled) return;
+    gFLEXGestureInstalled = YES;
+    gFLEXGestureWindows = [NSHashTable weakObjectsHashTable];
+    gFLEXGestureTarget = [[FKFLEXGestureTarget alloc] init];
+    FKRunOnMain(^{
+        NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+        [center addObserverForName:UIWindowDidBecomeKeyNotification object:nil queue:[NSOperationQueue mainQueue]
+                        usingBlock:^(NSNotification *note) {
+            if ([note.object isKindOfClass:[UIWindow class]]) [self attachFLEXGestureToWindow:note.object];
+        }];
+        [center addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:[NSOperationQueue mainQueue]
+                        usingBlock:^(NSNotification *note) {
+            for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+                if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+                for (UIWindow *window in ((UIWindowScene *)scene).windows) [self attachFLEXGestureToWindow:window];
+            }
+        }];
+        for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+            for (UIWindow *window in ((UIWindowScene *)scene).windows) [self attachFLEXGestureToWindow:window];
+        }
+        FKLog(@"FLEX gesture installed (two-finger long press)");
+    });
+}
+
++ (void)attachFLEXGestureToWindow:(UIWindow *)window {
+    if (!window || window.windowLevel > UIWindowLevelAlert) return;
+    @synchronized(gFLEXGestureWindows) {
+        if ([gFLEXGestureWindows containsObject:window]) return;
+        [gFLEXGestureWindows addObject:window];
+    }
+    UILongPressGestureRecognizer *press =
+        [[UILongPressGestureRecognizer alloc] initWithTarget:gFLEXGestureTarget
+                                                      action:@selector(handleFLEXPress:)];
+    press.numberOfTouchesRequired = 2;
+    press.minimumPressDuration = 0.8;
+    press.allowableMovement = 24;
+    press.cancelsTouchesInView = NO;
+    press.delegate = gFLEXGestureTarget;
+    [window addGestureRecognizer:press];
 }
 
 #pragma mark Frida
@@ -334,7 +440,8 @@ static void FKMakeWebViewInspectable(WKWebView *webView) {
 + (NSArray<NSDictionary *> *)discoveredLibraries {
     NSMutableArray *found = [NSMutableArray array];
     NSDictionary *groups = @{
-        @"flex": @[@"AllFLEXing.dylib", @"libFLEX.dylib", @"FLEX.dylib"],
+        @"flex": @[@"libFLEX.dylib", @"AllFLEXing.dylib", @"FLEX.dylib"],
+        @"flex_loader": @[@"FLEXing.dylib"],
         @"frida": @[@"FridaGadget.dylib", @"frida-gadget.dylib", @"libFridaGadget.dylib",
                     @"frida-gadget-17.24.3-ios-universal.dylib"],
     };
@@ -370,7 +477,7 @@ static void FKMakeWebViewInspectable(WKWebView *webView) {
                                                 @"apply": @{ @"type": @"boolean", @"description": @"Also apply to already-open web views." } },
                               @"required": @[], @"additionalProperties": @NO } },
         @{ @"name": @"flex", @"description":
-               @"Load and control the FLEX/AllFLEXing in-app explorer. action = status | load | show | hide.",
+               @"Load libFLEX (core) plus FLEXing when libsubstrate is available; otherwise install the built-in two-finger long-press gesture. action = status | load | show | hide.",
            @"inputSchema": @{ @"type": @"object",
                               @"properties": @{ @"action": @{ @"type": @"string", @"enum": @[@"status", @"load", @"show", @"hide"] },
                                                 @"path": str(@"Optional dylib path.") },
