@@ -295,3 +295,28 @@ inspector is native: the same technique as WebInspectEnabler — swizzle the `WK
 load methods and force `inspectable` (public on iOS 16.4+, private preference fallback).
 Four MCP tools were added (`utilities_status`, `web_inspector`, `flex`, `frida`), bringing
 the total to 91.
+
+
+---
+
+## 11. v1.7.0: native FLEX/Frida functionality
+
+No helper dylib is loaded any more. The previous `flex` and `frida` tools were removed;
+their capabilities are implemented in `FKRuntimeKit`.
+
+| FLEX / Frida feature | Native implementation |
+|---|---|
+| FLEX heap explorer | malloc-zone introspection enumerator + registered-class validation, class filter, time/limit caps |
+| FLEX object inspector | class chain, instance size, description, ivar decode (object/Class/SEL/C string/numbers/struct) |
+| FLEX method calling | `NSInvocation` with type-driven argument and return conversion |
+| FLEX network history | `NSURLSession` completion-handler swizzles, ring buffer, headers + previews |
+| FLEX file/defaults/keychain | already present (File browser, Defaults, Keychain screens) |
+| Frida `Memory` | `mem_read` / `mem_write` / `mem_scan` (text or hex with `??`), bounds and size caps |
+| Frida `Module` | dyld image list, Mach-O `LC_SYMTAB` export enumeration, base/slide |
+| Frida `Interceptor.replace` | 16-byte ARM64 entry redirect, original bytes saved, `hook_restore` |
+| Frida remote control | already present: MCP over HTTP |
+
+Deliberate omissions: no Stalker, no agent protocol, no JS `Interceptor.attach` callbacks
+(they require cross-thread calls into JavaScriptCore with register preservation), and no
+trampoline for calling the original function after a redirect. All are documented in the
+README rather than faked.

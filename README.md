@@ -164,7 +164,7 @@ curl -s http://192.168.1.42:8787/mcp \
        "params":{"name":"devkit_selftest","arguments":{}}}'
 ```
 
-### Tools (91)
+### Tools (106)
 
 **Filesystem** — `fs_roots`, `fs_list`, `fs_stat`, `fs_read`, `fs_write`,
 `fs_mkdir`, `fs_delete`, `fs_move`, `fs_copy`, `fs_search`, `fs_chmod`,
@@ -196,7 +196,12 @@ curl -s http://192.168.1.42:8787/mcp \
 
 **Shell (4)** — `shell`, `shell_help`, `shell_status`, `shell_server`
 
-**Utilities (4)** — `utilities_status`, `web_inspector`, `flex`, `frida`
+**Utilities (2)** — `utilities_status`, `web_inspector`
+
+**Runtime (17)** — `objc_heap`, `objc_object`, `objc_call`, `objc_ivar_get`,
+`objc_ivar_set`, `view_highlight`, `mem_modules`, `mem_read`, `mem_write`,
+`mem_scan`, `mem_exports`, `hook_redirect`, `hook_restore`, `hook_list`,
+`net_history`, `net_clear`, `net_capture`
 
 Paths accept `~`, `$APP`, `$CONTAINER`, `$DOCS`, `$LIB`, `$TMP`, or relative
 paths (resolved against the app container).
@@ -260,37 +265,43 @@ their metadata. Transfers cap a single file at 3 MB and the whole response at 4 
 
 ---
 
-## Utilities: FLEX, Frida, WebKit inspector
+## Native runtime toolkit (FLEX + Frida replacement)
 
-These three helpers are **loaded at runtime**, not linked. That is deliberate: AllFLEXing
-is 3.5 MB and the Frida gadget is 62 MB, and a dylib cannot hand executable bytes to
-`dlopen`. Search order for both:
+FLEX's explorer and the Frida gadget's memory/hook tooling are implemented **inside
+ForgeKit**. No helper dylib is loaded, and the previous `flex` / `frida` entry points
+are gone.
 
-```
-<App>.app/Frameworks/<name>   <App>.app/<name>
-Documents/ForgeKit/dylibs/<name>   /usr/lib/<name>   /var/jb/usr/lib/<name>
-```
-
-On a jailed device the helper must be signed into the app bundle (add it in the
-sideloader next to ForgeKit), otherwise `dlopen` reports a code-signing error and the
-Utilities screen shows it verbatim.
-
-| Utility | Behaviour |
+| Area | What it does |
 |---|---|
-| **FLEX** | Core: `libFLEX.dylib` (preferred, self-contained) or `AllFLEXing.dylib`. Loader: `FLEXing.dylib` is loaded only when `MSHookMessageEx` (libsubstrate) is present, since it is a Substrate tweak that hooks `UIStatusBarWindow`. On a jailed host the loader is skipped and an equivalent **two-finger long press** gesture is installed instead. Panel → Utilities → *Load and show explorer*. |
-| **WebKit inspector** | Native implementation of WebInspectEnabler: swizzles `WKWebView` `loadRequest:`, `loadHTMLString:baseURL:` and `loadFileURL:…` and forces `inspectable = YES` (public API on iOS 16.4+, private preference fallback below). Toggle in Utilities, or `web_inspector {enabled:true}`. |
-| **Frida gadget** | `dlopen` the gadget, after writing `FridaGadget.config` (listen `127.0.0.1:27042`, runtime `qjs`, `on_load: resume`). Panel → Utilities → *Load gadget*; the listener belongs to Frida, ForgeKit only loads and reports it. |
+| ObjC heap | Enumerates live objects by walking malloc zones and validating each candidate's isa against the registered class table (FLEX's approach), with a class filter, 4 s budget and 2000-object cap. |
+| Object inspector | Class chain, instance size, `description`, every ivar along the chain with type decoding (objects, classes, selectors, C strings, numerics, structs). |
+| Method invocation | `objc_call` builds an `NSInvocation` from the method signature, converts JSON arguments to the declared types and decodes the return value. |
+| Ivars | Read and write by name, walking superclasses. |
+| Network | Swizzles `NSURLSession` completion-handler task creation and records method, URL, status, timing, headers, sizes and a 4 KB body preview in a 300-entry ring buffer. |
+| Memory | `mem_modules` (dyld images + slide), `mem_read` (vm_read_overwrite), `mem_write` (vm_protect + COW), `mem_scan` (text or hex with `??` wildcards), `mem_exports` (Mach-O `LC_SYMTAB`). |
+| Hooks | 16-byte ARM64 inline redirect (`ldr x16,#8; br x16; <addr>`), original bytes saved, restorable per symbol, `mprotect` + icache invalidation. |
+| WebKit | Native `WKWebView` inspectable swizzles (see above). |
 
-MCP:
+Panel → **Utilities** exposes the same features: traffic capture toggle, heap scan,
+traffic history, active hooks and module list.
 
 ```jsonc
-{"name":"flex","arguments":{"action":"load"}}        // core + loader/gesture, or show / hide / status
-{"name":"frida","arguments":{"action":"load","config":{"interaction":{"type":"listen","port":27042}}}}
-{"name":"web_inspector","arguments":{"enabled":true,"apply":true}}
+{"name":"objc_heap","arguments":{"class":"UIView","limit":50}}
+{"name":"objc_object","arguments":{"object":"0x102a4c800"}}
+{"name":"mem_scan","arguments":{"pattern":"48 65 6c ?? 6f","module":"MyApp"}}
+{"name":"hook_redirect","arguments":{"source":"_objc_msgSend","destination":"0x1024a1000"}}
+{"name":"net_history","arguments":{"limit":20}}
 ```
 
-Status for all three (including every candidate path that was probed) is returned by
-`utilities_status`.
+Limits worth knowing:
+
+* Hooks redirect the entry point; there is no trampoline for calling the original.
+  Every hook is saved and can be restored with `hook_restore`.
+* `mem_write` needs a writable/protectable page; read-only system pages are refused
+  by `vm_protect` and reported.
+* Network capture covers `NSURLSession` completion-handler tasks, not delegate-based
+  sessions or `NSURLConnection`.
+* Heap enumeration is bounded (4 s, 2000 objects, 200 rows in the UI).
 
 ---
 
@@ -362,7 +373,9 @@ Sources/
   FKShellServer.m     loopback TCP transport (client.py compatible)
   FKShellTools.m      4 shell MCP tools
   FKShellScreens.m    terminal UI
-  FKUtilities.h/.m    FLEX + Frida loaders, WKWebView inspector swizzles, 4 tools
+  FKRuntimeKit.h/.m   heap scan, object/ivar inspection, invocation, memory, hooks, traffic
+  FKRuntimeTools.m    17 runtime MCP tools
+  FKUtilities.h/.m    WebKit inspector, native utilities status
   FKUtilityScreens.m  Utilities screen
   FKToolsPrivate.h    shared internal declarations
   FKHTTPServer.m      socket server, routing, auth, request log
@@ -399,13 +412,9 @@ the app's touch handling are untouched.
   token like a password. Regenerate it from Network or Settings.
 * **iOS 14+**. `UIScene` is required for window placement; apps that still run a
   single legacy window fall back to `UIScreen` bounds.
-* **FLEXing needs libsubstrate.** `FLEXing.dylib` links
-  `@executable_path/Frameworks/libsubstrate.dylib`; without a hooking runtime its `dlopen`
-  fails and ForgeKit falls back to its own two-finger long-press gesture. `libFLEX.dylib`
-  alone is enough for the explorer.
-* **Helper dylibs must be signed into the app.** A jailed process cannot `dlopen`
-  unsigned code; `flex`/`frida` return the exact `dlerror` when that happens. FLEX and
-  the Frida gadget are not embedded in ForgeKit.
+* **Runtime toolkit scope.** Hooks are entry-point redirects without an original-call
+  trampoline; heap scans and scans are bounded; traffic capture covers completion-handler
+  `NSURLSession` tasks.
 * **Volume events are not a public API.** The trigger observes the system's
   AVSystemController change notification (by string name) with a KVO fallback on
   `AVAudioSession.outputVolume`; both are best-effort and can be muted by other audio
