@@ -765,8 +765,12 @@ UIViewController *FKTopViewController(void) {
 
 void FKRunOnMain(dispatch_block_t block) {
     if (!block) return;
-    if ([NSThread isMainThread]) block();
-    else dispatch_async(dispatch_get_main_queue(), block);
+    if ([NSThread isMainThread]) {
+        block();
+    } else {
+        // Synchronous: callers (HTTP worker threads) read the result immediately after.
+        dispatch_sync(dispatch_get_main_queue(), block);
+    }
 }
 
 UIImage *FKSnapshotKeyWindow(void) {
