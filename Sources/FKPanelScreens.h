@@ -31,3 +31,6 @@
 
 @interface FKShellViewController : UIViewController
 @end
+
+@interface FKUtilitiesViewController : FKListViewController
+@end

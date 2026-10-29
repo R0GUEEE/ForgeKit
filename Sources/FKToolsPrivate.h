@@ -3,6 +3,7 @@
 //
 
 #import "ForgeKit.h"
+#import "FKUtilities.h"
 
 @interface FKUnityTools : NSObject
 + (NSArray<NSDictionary *> *)definitions;
@@ -40,6 +41,11 @@
 @end
 
 @interface FKShellTools : NSObject
++ (NSArray<NSDictionary *> *)definitions;
++ (NSDictionary *)callTool:(NSString *)name arguments:(NSDictionary *)arguments;
+@end
+
+@interface FKUtilityTools : NSObject
 + (NSArray<NSDictionary *> *)definitions;
 + (NSDictionary *)callTool:(NSString *)name arguments:(NSDictionary *)arguments;
 @end

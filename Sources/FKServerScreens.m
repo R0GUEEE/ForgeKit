@@ -49,6 +49,7 @@ static UIStackView *FKVerticalStack(CGFloat spacing) {
     UIStackView *stack = [[UIStackView alloc] init];
     stack.axis = UILayoutConstraintAxisVertical;
     stack.spacing = spacing;
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
     return stack;
 }
 
@@ -96,11 +97,11 @@ static UIImage *FKQRCodeImage(NSString *string, CGFloat scale) {
     UIStackView *stack = FKVerticalStack(12);
     [scroll addSubview:stack];
     [NSLayoutConstraint activateConstraints:@[
-        [stack.leadingAnchor constraintEqualToAnchor:scroll.leadingAnchor constant:14],
-        [stack.trailingAnchor constraintEqualToAnchor:scroll.trailingAnchor constant:-14],
-        [stack.topAnchor constraintEqualToAnchor:scroll.topAnchor constant:14],
-        [stack.bottomAnchor constraintEqualToAnchor:scroll.bottomAnchor constant:-28],
-        [stack.widthAnchor constraintEqualToAnchor:scroll.widthAnchor constant:-28],
+        [stack.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor constant:14],
+        [stack.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor constant:-14],
+        [stack.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:14],
+        [stack.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-28],
+        [stack.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor constant:-28],
     ]];
 
     UIStackView *statusStack = FKVerticalStack(8);
@@ -311,11 +312,11 @@ static UIImage *FKQRCodeImage(NSString *string, CGFloat scale) {
     UIStackView *stack = FKVerticalStack(10);
     [scroll addSubview:stack];
     [NSLayoutConstraint activateConstraints:@[
-        [stack.leadingAnchor constraintEqualToAnchor:scroll.leadingAnchor constant:14],
-        [stack.trailingAnchor constraintEqualToAnchor:scroll.trailingAnchor constant:-14],
-        [stack.topAnchor constraintEqualToAnchor:scroll.topAnchor constant:14],
-        [stack.bottomAnchor constraintEqualToAnchor:scroll.bottomAnchor constant:-24],
-        [stack.widthAnchor constraintEqualToAnchor:scroll.widthAnchor constant:-28],
+        [stack.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor constant:14],
+        [stack.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor constant:-14],
+        [stack.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:14],
+        [stack.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-24],
+        [stack.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor constant:-28],
     ]];
 
     [stack addArrangedSubview:FKLabel(@"JSC context with fk.read, fk.write, fk.list, fk.stat, fk.info, fk.log, fk.sleep.",

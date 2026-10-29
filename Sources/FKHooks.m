@@ -4,6 +4,7 @@
 
 #import "ForgeKit.h"
 #import <objc/runtime.h>
+#import "FKUtilities.h"
 
 static void FKInstallGesturesOnAllWindows(void) {
     UIApplication *application = [UIApplication sharedApplication];
@@ -65,6 +66,10 @@ static void FKForgeKitInitialize(void) {
 
             FKInstallGesturesOnAllWindows();
             FKLog(@"ForgeKit %@ loaded into %@ (%@)", FKVersionString, FKAppIdentifier(), FKDeviceModelIdentifier());
+
+            [FKUtilities installWebInspectorSwizzle];
+            if ([FKPrefs boolForKey:@"webInspector" defaultValue:NO])
+                [FKUtilities applyWebInspectorToOpenWebViews];
 
             if ([FKPrefs boolForKey:@"volumeTrigger" defaultValue:YES]) {
                 [[FKVolumeTrigger sharedTrigger] start];

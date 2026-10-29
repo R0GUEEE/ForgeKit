@@ -10,7 +10,7 @@ include $(THEOS)/makefiles/common.mk
 LIBRARY_NAME = ForgeKit
 ForgeKit_FILES = $(wildcard Sources/*.m)
 ForgeKit_CFLAGS = -fobjc-arc -fvisibility=hidden -ISources
-ForgeKit_FRAMEWORKS = Foundation UIKit CoreGraphics QuartzCore JavaScriptCore Security CoreImage AVFoundation MediaPlayer
+ForgeKit_FRAMEWORKS = Foundation UIKit CoreGraphics QuartzCore JavaScriptCore Security CoreImage AVFoundation MediaPlayer WebKit
 ForgeKit_LIBRARIES = z
 ForgeKit_INSTALL_PATH = /usr/lib
 

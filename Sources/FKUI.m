@@ -147,15 +147,18 @@
         self.textView.textColor = [UIColor labelColor];
     }
 
+    NSMutableArray<UIBarButtonItem *> *rightItems = [NSMutableArray array];
     if (!self.readOnly && self.filePath.length) {
-        self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemSave
-                                                                                               target:self
-                                                                                               action:@selector(save)];
+        [rightItems addObject:[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemSave
+                                                                            target:self
+                                                                            action:@selector(save)]];
     }
-    UIBarButtonItem *share = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAction
-                                                                           target:self
-                                                                           action:@selector(share)];
-    self.navigationItem.leftBarButtonItem = share;
+    [rightItems addObject:[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAction
+                                                                         target:self
+                                                                         action:@selector(share)]];
+    // Keep the automatic back button: actions live on the right.
+    self.navigationItem.rightBarButtonItems = rightItems;
+    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(keyboardChanged:)
                                                  name:UIKeyboardWillChangeFrameNotification object:nil];
@@ -191,7 +194,7 @@
 - (void)share {
     NSArray *items = self.filePath.length ? @[[NSURL fileURLWithPath:self.filePath]] : @[self.textView.text ?: @""];
     UIActivityViewController *activity = [[UIActivityViewController alloc] initWithActivityItems:items applicationActivities:nil];
-    activity.popoverPresentationController.barButtonItem = self.navigationItem.leftBarButtonItem;
+    activity.popoverPresentationController.barButtonItem = self.navigationItem.rightBarButtonItems.lastObject;
     [self presentViewController:activity animated:YES completion:nil];
 }
 
@@ -225,13 +228,15 @@
     self.textView.font = [UIFont monospacedSystemFontOfSize:11 weight:UIFontWeightRegular];
     [self.view addSubview:self.textView];
 
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"More"
-                                                                              style:UIBarButtonItemStylePlain
-                                                                             target:self
-                                                                             action:@selector(loadMore)];
-    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAction
-                                                                                           target:self
-                                                                                           action:@selector(share)];
+    UIBarButtonItem *more = [[UIBarButtonItem alloc] initWithTitle:@"More"
+                                                             style:UIBarButtonItemStylePlain
+                                                            target:self
+                                                            action:@selector(loadMore)];
+    UIBarButtonItem *share = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAction
+                                                                            target:self
+                                                                            action:@selector(share)];
+    self.navigationItem.rightBarButtonItems = @[more, share];
+    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
     [self renderFrom:0];
 }
 
@@ -251,7 +256,7 @@
 - (void)share {
     UIActivityViewController *activity = [[UIActivityViewController alloc] initWithActivityItems:@[[NSURL fileURLWithPath:self.filePath]]
                                                                           applicationActivities:nil];
-    activity.popoverPresentationController.barButtonItem = self.navigationItem.leftBarButtonItem;
+    activity.popoverPresentationController.barButtonItem = self.navigationItem.rightBarButtonItems.lastObject;
     [self presentViewController:activity animated:YES completion:nil];
 }
 
@@ -277,6 +282,7 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor blackColor];
+    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
     UIImage *image = [UIImage imageWithContentsOfFile:self.filePath];
     self.scrollView = [[UIScrollView alloc] initWithFrame:self.view.bounds];
     self.scrollView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
