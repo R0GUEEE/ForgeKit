@@ -376,3 +376,20 @@ Tools remain at 106; FLEX is UI over the existing runtime layer. `libsqlite3` is
 linked. Deliberate gaps: no 3D exploded hierarchy, no SQLite write mode, no per-view
 property editor beyond ivar writes, notification *observers* are not enumerable (posts
 are recorded instead).
+
+
+---
+
+## 14. v2.0.0: modern panel and original FLEX layout
+
+* **Panel**: dark surface, gradient header with live MCP/tool status, four quick-action
+  pills (server, capture, inspector, frames), glass tile grid unchanged in geometry
+  (4 columns, fill-equally rows, placeholder padding) and a compact footer. The panel
+  window forces dark mode and a translucent black navigation bar.
+* **FLEX**: rewritten as a container with the original FLEX layout language — orange
+  wordmark, horizontally scrolling module toolbar with selection pills, `Done`, and a
+  per-module `UINavigationController` so each module keeps its own drill-down stack.
+  Modules: Hierarchy, Heap, Classes, Network, Libraries, Globals, Files, SQLite, System.
+* **Build**: macOS runners were returning cancelled jobs with no steps, so this release
+  was linked on Ubuntu with clang 18 + ld64.lld and merged with `tools/make-fat.py`.
+  `build-linux.yml` reproduces it; the macOS workflow remains the preferred path.

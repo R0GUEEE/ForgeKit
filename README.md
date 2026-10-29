@@ -52,9 +52,14 @@ export THEOS=~/theos
 make                            # → .theos/obj/.../libForgeKit.dylib
 ```
 
-CI: `.github/workflows/build.yml` builds the dylib on `macos-15`, verifies the
+CI: `.github/workflows/build.yml` builds the dylib on macOS, verifies the
 architectures, asserts the constructor symbol survived optimisation, and fails if
 any substrate/MSHook/ellekit symbol appears in the binary.
+
+`.github/workflows/build-linux.yml` is the fallback used for this release: Ubuntu,
+clang 18 + `ld64.lld` against the iPhoneOS 16.5 SDK, one thin link per architecture and
+a Python fat-header merge. It produces the same universal dylib without a macOS runner.
+`tools/make-fat.py` and `tools/inspect-macho.py` do the merge and verification.
 
 ---
 
@@ -265,6 +270,21 @@ their metadata. Transfers cap a single file at 3 MB and the whole response at 4 
 
 ---
 
+## Panel design
+
+The panel is a dark, gradient-headed dashboard:
+
+* **Header** — app icon, name, bundle id and a live `MCP :port · N tools` status line.
+* **Quick actions** — four pills that toggle the MCP server, traffic capture and the
+  WebKit inspector, and flash every view frame.
+* **Grid** — 13 glass tiles in four equal columns, sized from the available space, with
+  coloured icon plates and two-line labels. The last row is padded with clear cells, so
+  nothing overlaps and nothing scrolls.
+* **Footer** — one-line activation and endpoint hint.
+
+All system screens are forced into dark mode inside the panel; the navigation bar is
+translucent black with white titles.
+
 ## FLEX menu
 
 Panel → **FLEX** is the full rebuilt explorer. It is not a wrapper: every module runs
@@ -282,10 +302,11 @@ on `FKRuntimeKit` and the runtime hooks ForgeKit already installs.
 | **SQLite** | Finds `.db`/`.sqlite`/`.sqlite3` files in Documents and Library, lists tables, previews rows and runs ad-hoc SQL in a read-only connection. |
 | **System** | Device, iOS, app, container, memory, cores, uptime, module and class counts, LAN addresses. |
 
-The panel home is a fixed 4-column auto-fit grid: tiles size from the available
-height/width, rows share space equally, and the page never scrolls. Thirteen tiles plus
-clear placeholders fill four equal rows without overlap; on a 568 pt screen the icon and
-label still fit inside each cell.
+FLEX uses its original layout language: a near-black surface, an orange `FLEX` wordmark,
+a horizontal toolbar of module icons (Hierarchy, Heap, Classes, Network, Libraries,
+Globals, Files, SQLite, System) with a selected pill, a `Done` button, and a dedicated
+navigation stack per module so drill-down keeps its own back button. The module toolbar
+scrolls horizontally when space is tight; the content below is full height.
 
 ## Native runtime toolkit (FLEX + Frida replacement)
 
