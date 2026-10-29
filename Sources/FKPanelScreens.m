@@ -1,5 +1,6 @@
 #import "ForgeKit.h"
 #import "FKPanelScreens.h"
+#import <Security/Security.h>
 
 #pragma mark - Defaults
 
