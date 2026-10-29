@@ -212,6 +212,10 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
 - (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
 
 - (void)refreshStatus {
+    if (![NSThread isMainThread]) {
+        FKRunOnMain(^{ [self refreshStatus]; });
+        return;
+    }
     FKHTTPServer *server = [FKHTTPServer sharedServer];
     NSString *state = server.isRunning ? [NSString stringWithFormat:@"MCP :%u", server.port] : @"MCP off";
     self.statusLabel.text = [NSString stringWithFormat:@"%@ · %lu tools", state,
