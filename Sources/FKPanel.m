@@ -240,7 +240,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
     hint.textColor = [UIColor secondaryLabelColor];
     NSString *port = [NSString stringWithFormat:@"%ld", (long)[FKPrefs integerForKey:@"port" defaultValue:8787]];
     hint.text = [NSString stringWithFormat:
-                 @"Hold the left side of the status bar to open this panel.\n"
+                 @"Three-finger tap anywhere in the app to open this panel.\n"
                  @"MCP endpoint: http://%@:%@/mcp\n"
                  @"Dashboard: http://%@:%@/?token=%@",
                  FKLanAddress(), port, FKLanAddress(), port, [FKPrefs token]];
@@ -449,41 +449,31 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
         if ([_observedWindows containsObject:window]) return;
         [_observedWindows addObject:window];
     }
-    UILongPressGestureRecognizer *press =
-        [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleStatusBarPress:)];
-    press.minimumPressDuration = MAX(0.35, [FKPrefs doubleForKey:@"gestureDuration" defaultValue:0.7]);
-    press.allowableMovement = 26;
-    press.cancelsTouchesInView = NO;
-    press.delegate = self;
-    [window addGestureRecognizer:press];
+    UITapGestureRecognizer *tap =
+        [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleThreeFingerTap:)];
+    tap.numberOfTouchesRequired = 3;
+    tap.numberOfTapsRequired = 1;
+    tap.cancelsTouchesInView = NO;
+    tap.delaysTouchesBegan = NO;
+    tap.delaysTouchesEnded = NO;
+    tap.delegate = self;
+    [window addGestureRecognizer:tap];
 }
 
-- (BOOL)statusBarZoneContainsPoint:(CGPoint)point inView:(UIView *)view {
-    CGFloat statusHeight = 20;
-    UIWindowScene *scene = view.window.windowScene ?: FKActiveWindowScene();
-    if (scene.statusBarManager) statusHeight = MAX(statusHeight, scene.statusBarManager.statusBarFrame.size.height);
-    BOOL inStatusBar = point.y <= statusHeight + 12 && point.x <= 120;
-    BOOL onEdge = [FKPrefs boolForKey:@"edgeFallback" defaultValue:YES] && point.x <= 16 && point.y < 220;
-    return inStatusBar || onEdge;
-}
-
-- (void)handleStatusBarPress:(UILongPressGestureRecognizer *)gesture {
-    if (gesture.state != UIGestureRecognizerStateBegan) return;
-    UIView *view = gesture.view;
-    CGPoint point = [gesture locationInView:view];
-    if (![self statusBarZoneContainsPoint:point inView:view]) return;
-    if ([FKPrefs boolForKey:@"haptics" defaultValue:YES]) {
+- (void)handleThreeFingerTap:(UITapGestureRecognizer *)gesture {
+    if (gesture.state != UIGestureRecognizerStateEnded) return;
+    BOOL wasVisible = self.isVisible;
+    [self toggle];
+    if (!wasVisible && [FKPrefs boolForKey:@"haptics" defaultValue:YES]) {
         UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
         [generator impactOccurred];
     }
-    [self show];
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
-    UIView *view = gestureRecognizer.view;
-    if (!view) return NO;
-    CGPoint point = [touch locationInView:view];
-    return [self statusBarZoneContainsPoint:point inView:view];
+    // Three-finger taps belong to the toolkit; the recognizer never cancels app touches
+    // and every other recognizer is allowed to run alongside it.
+    return YES;
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
