@@ -351,3 +351,28 @@ a stretchable 4-column grid and a 16 pt footer to the safe area. Rows use
 icon size from the tile bounds (`min(width-16, height-26-12, 46)`), so all 13 tiles fit
 any height without overlap or scrolling. The last row is padded with clear placeholder
 views to keep equal widths.
+
+
+---
+
+## 13. v1.9.0: complete FLEX menu
+
+`FKExplorerScreens.m` now implements FLEX's module set on top of `FKRuntimeKit`:
+
+* **Heap counts + references** — one malloc-zone scan grouped by class; `referencesTo:`
+  walks ivars of live objects looking for the selected pointer (bounded 4 s / 50 hits).
+* **Method invocation UI** — argument-count/type-driven `NSInvocation` call from the class
+  detail screen, with class-method support and JSON result display.
+* **Globals** — Defaults, Cookies, Keychain, **Notifications** and **Web views**.
+  Notification recording swizzles `NSNotificationCenter` `postNotificationName:object:`
+  and `…userInfo:` into a 300-entry ring buffer.
+* **SQLite** — database discovery in Documents/Library, table listing, row preview and
+  ad-hoc `SELECT` execution through a read-only `sqlite3` connection.
+* **System** — device/app/process/disk/image/class summary.
+* **Hierarchy** — adds a **Frames** action that draws a border over every visible view
+  using a single transient overlay window.
+
+Tools remain at 106; FLEX is UI over the existing runtime layer. `libsqlite3` is now
+linked. Deliberate gaps: no 3D exploded hierarchy, no SQLite write mode, no per-view
+property editor beyond ivar writes, notification *observers* are not enumerable (posts
+are recorded instead).

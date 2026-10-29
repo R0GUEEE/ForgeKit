@@ -265,24 +265,27 @@ their metadata. Transfers cap a single file at 3 MB and the whole response at 4 
 
 ---
 
-## Explorer (native FLEX UI)
+## FLEX menu
 
-Panel → **Explorer** (or the first tile) opens a FLEX-style browser built entirely on
-the native runtime kit:
+Panel → **FLEX** is the full rebuilt explorer. It is not a wrapper: every module runs
+on `FKRuntimeKit` and the runtime hooks ForgeKit already installs.
 
-| Screen | Contents |
+| Module | Contents |
 |---|---|
-| View hierarchy | Drill down the live window tree; each row shows class + frame + hidden state, with **Highlight** (red outline via the overlay window) and **Inspect** (ivar dump). |
-| Classes | Every Objective-C class with search; class detail lists instance/class methods, ivars and properties, a method viewer with copy-selector, and **Instances** (heap scan → object browser). |
-| Object browser | Class chain, size, description, every ivar; object-valued ivars drill down, primitives can be edited. |
-| Libraries | Loaded Mach-O images with base/size; per-module exported symbols with live filtering. |
-| Network traffic | Captured `NSURLSession` records with status, timing, headers and body preview. |
-| Data | Files, Preferences, Keychain, Cookies, Application info. |
+| **Hierarchy** | Live view-tree drill-down; **Highlight** outlines a node, **Frames** overlays every visible view at once, **Inspect** dumps ivars. |
+| **Heap** | Classes ranked by live object count (malloc-zone scan), objects per class, object browser with class chain, size, description and every ivar; **References** finds objects whose ivars point at the selected object. |
+| **Classes** | Every Objective-C class with search; instance/class methods, ivars, properties; method viewer with type encodings, copy-selector and **Invoke** (object pointer + comma-separated args) through `NSInvocation`. |
+| **Libraries** | dyld images with base/size, per-module `LC_SYMTAB` exports with live filtering. |
+| **Network** | Captured `NSURLSession` traffic: status, timing, headers, body preview, detail screen, clear. |
+| **Globals** | User Defaults, Cookies, Keychain, **Notifications** (recorded `NSNotificationCenter` posts) and **Web views** (enables inspectable on live `WKWebView`s). |
+| **Files** | Full container browser with text/hex/image/plist previews. |
+| **SQLite** | Finds `.db`/`.sqlite`/`.sqlite3` files in Documents and Library, lists tables, previews rows and runs ad-hoc SQL in a read-only connection. |
+| **System** | Device, iOS, app, container, memory, cores, uptime, module and class counts, LAN addresses. |
 
-The panel home is a fixed **4-column auto-fit grid**: tiles size themselves from the
-available height and width, rows share space equally, and the page never scrolls. Empty
-slots in the last row are inert placeholders so tiles keep their size and never overlap.
-On a 568 pt screen the grid still fits header + 4 rows + footer without clipping.
+The panel home is a fixed 4-column auto-fit grid: tiles size from the available
+height/width, rows share space equally, and the page never scrolls. Thirteen tiles plus
+clear placeholders fill four equal rows without overlap; on a 568 pt screen the icon and
+label still fit inside each cell.
 
 ## Native runtime toolkit (FLEX + Frida replacement)
 
@@ -394,7 +397,8 @@ Sources/
   FKShellScreens.m    terminal UI
   FKRuntimeKit.h/.m   heap scan, object/ivar inspection, invocation, memory, hooks, traffic
   FKRuntimeTools.m    17 runtime MCP tools
-  FKExplorerScreens.m FLEX-style explorer (hierarchy, classes, heap, libraries, traffic)
+  FKExplorerScreens.m FLEX menu: hierarchy, heap, classes, libraries, network,
+                      globals, notifications, web views, SQLite, system
   FKUtilities.h/.m    WebKit inspector, native utilities status
   FKUtilityScreens.m  Utilities screen
   FKToolsPrivate.h    shared internal declarations
