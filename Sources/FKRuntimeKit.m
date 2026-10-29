@@ -16,6 +16,7 @@
 #import <mach-o/dyld.h>
 #import <mach-o/loader.h>
 #import <mach-o/nlist.h>
+#import <sqlite3.h>
 
 static const NSInteger FKMaxHeapScanSeconds = 4;
 
@@ -806,6 +807,249 @@ static void FKRecordNetwork(NSURLRequest *request, NSURLResponse *response,
         FKRecordNetwork(request, response, data, error, started);
         completion(data, response, error);
     }];
+}
+
+@end
+
+
+#pragma mark - Heap stats and references
+
++ (NSDictionary *)heapClassCounts:(NSInteger)limit {
+    NSDictionary *scan = [self heapObjectsOfClass:nil limit:MIN(MAX(limit * 10, 500), 4000)];
+    NSMutableDictionary<NSString *, NSNumber *> *counts = [NSMutableDictionary dictionary];
+    for (NSDictionary *object in scan[@"objects"] ?: @[]) {
+        NSString *className = object[@"class"] ?: @"?";
+        counts[className] = @([counts[className] integerValue] + 1);
+    }
+    NSArray *sorted = [counts.allKeys sortedArrayUsingComparator:^NSComparisonResult(NSString *a, NSString *b) {
+        NSInteger ca = [counts[a] integerValue], cb = [counts[b] integerValue];
+        if (ca != cb) return ca > cb ? NSOrderedAscending : NSOrderedDescending;
+        return [a compare:b];
+    }];
+    NSMutableArray *rows = [NSMutableArray array];
+    for (NSString *className in sorted) {
+        [rows addObject:@{ @"class": className, @"count": counts[className] }];
+        if ((NSInteger)rows.count >= limit) break;
+    }
+    return @{ @"ok": @YES, @"scanned": scan[@"count"] ?: @0,
+              @"truncated": scan[@"truncated"] ?: @NO, @"classes": rows };
+}
+
++ (NSDictionary *)referencesTo:(unsigned long long)pointer limit:(NSInteger)limit {
+    if (!pointer) return @{ @"ok": @NO, @"error": @"pointer required" };
+    NSInteger cap = MAX(1, MIN(limit, 100));
+    NSDictionary *scan = [self heapObjectsOfClass:nil limit:3000];
+    NSMutableArray *references = [NSMutableArray array];
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:4.0];
+    for (NSDictionary *object in scan[@"objects"] ?: @[]) {
+        if ([deadline timeIntervalSinceNow] < 0) break;
+        uintptr_t candidate = (uintptr_t)[object[@"ptr"] unsignedLongLongValue];
+        if (!candidate || candidate == (uintptr_t)pointer) continue;
+        Class cls = object_getClass((__bridge id)(void *)candidate);
+        Class cursor = cls;
+        BOOL found = NO;
+        while (cursor && !found) {
+            unsigned int count = 0;
+            Ivar *ivars = class_copyIvarList(cursor, &count);
+            for (unsigned i = 0; i < count && !found; i++) {
+                const char *type = ivar_getTypeEncoding(ivars[i]);
+                if (!type || type[0] != '@') continue;
+                void *address = (uint8_t *)(void *)candidate + ivar_getOffset(ivars[i]);
+                if (!FKMemReadable((uintptr_t)address, sizeof(void *))) continue;
+                void *value = *(void **)address;
+                if ((uintptr_t)value == (uintptr_t)pointer) {
+                    found = YES;
+                    [references addObject:@{ @"ptr": [NSString stringWithFormat:@"%llu", (unsigned long long)candidate],
+                                             @"class": NSStringFromClass(cls) ?: @"?",
+                                             @"ivar": [NSString stringWithUTF8String:ivar_getName(ivars[i])] ?: @"?" }];
+                }
+            }
+            free(ivars);
+            cursor = class_getSuperclass(cursor);
+        }
+        if ((NSInteger)references.count >= cap) break;
+    }
+    return @{ @"ok": @YES, @"target": [NSString stringWithFormat:@"%llu", pointer],
+              @"count": @(references.count), @"references": references };
+}
+
++ (NSDictionary *)highlightAllViewsInWindow:(UIWindow *)window duration:(double)seconds {
+    if (!window) return @{ @"ok": @NO, @"error": @"no window" };
+    NSMutableArray *rects = [NSMutableArray array];
+    void (^walk)(UIView *) = ^(UIView *view) {
+        if (!view.hidden && view.alpha > 0.02) {
+            CGRect rect = [view convertRect:view.bounds toView:window];
+            if (rect.size.width > 1 && rect.size.height > 1)
+                [rects addObject:[NSValue valueWithCGRect:rect]];
+        }
+        for (UIView *child in view.subviews) walk(child);
+    };
+    walk(window);
+    FKRunOnMain(^{
+        UIWindowScene *scene = FKActiveWindowScene();
+        UIWindow *overlay = scene ? [[UIWindow alloc] initWithWindowScene:scene]
+                                  : [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+        overlay.windowLevel = UIWindowLevelAlert + 55;
+        overlay.backgroundColor = [UIColor clearColor];
+        overlay.userInteractionEnabled = NO;
+        UIViewController *controller = [[UIViewController alloc] init];
+        controller.view.backgroundColor = [UIColor clearColor];
+        NSInteger index = 0;
+        for (NSValue *value in rects) {
+            UIView *border = [[UIView alloc] initWithFrame:value.CGRectValue];
+            UIColor *color = @[ [UIColor systemRedColor], [UIColor systemBlueColor], [UIColor systemGreenColor] ][index % 3];
+            border.layer.borderColor = [color colorWithAlphaComponent:0.7].CGColor;
+            border.layer.borderWidth = 1;
+            [controller.view addSubview:border];
+            index++;
+        }
+        overlay.rootViewController = controller;
+        overlay.hidden = NO;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(MAX(0.5, seconds) * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{ overlay.hidden = YES; });
+    });
+    return @{ @"ok": @YES, @"views": @(rects.count), @"seconds": @(seconds) };
+}
+
+#pragma mark - Notifications
+
+static NSMutableArray<NSDictionary *> *gNotifications = nil;
+static NSLock *gNotificationLock = nil;
+
+static void FKRecordNotification(NSString *name, id object, BOOL hasUserInfo) {
+    if (!gNotifications) return;
+    [gNotificationLock lock];
+    [gNotifications addObject:@{ @"time": @([[NSDate date] timeIntervalSince1970]),
+                                 @"name": name ?: @"?",
+                                 @"object": object ? NSStringFromClass(object_getClass(object)) : @"nil",
+                                 @"user_info": @(hasUserInfo) }];
+    while (gNotifications.count > 300) [gNotifications removeObjectAtIndex:0];
+    [gNotificationLock unlock];
+}
+
+@implementation NSNotificationCenter (FKForgeKit)
+
+- (void)fk_postNotificationName:(NSNotificationName)name object:(id)object {
+    FKRecordNotification(name, object, NO);
+    [self fk_postNotificationName:name object:object];
+}
+
+- (void)fk_postNotificationName:(NSNotificationName)name object:(id)object userInfo:(NSDictionary *)userInfo {
+    FKRecordNotification(name, object, userInfo.count > 0);
+    [self fk_postNotificationName:name object:object userInfo:userInfo];
+}
+
+@end
+
+@implementation FKRuntimeKit (Notifications)
+
++ (void)installNotificationRecorder {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        gNotifications = [NSMutableArray array];
+        gNotificationLock = [[NSLock alloc] init];
+        Class center = [NSNotificationCenter class];
+        FKSwizzleInstance(center, @selector(postNotificationName:object:),
+                          @selector(fk_postNotificationName:object:));
+        FKSwizzleInstance(center, @selector(postNotificationName:object:userInfo:),
+                          @selector(fk_postNotificationName:object:userInfo:));
+        FKLog(@"notification recorder installed");
+    });
+}
+
++ (NSDictionary *)notificationHistory:(NSInteger)limit {
+    if (!gNotifications) return @{ @"ok": @YES, @"records": @[] };
+    [gNotificationLock lock];
+    NSArray *all = [gNotifications copy];
+    [gNotificationLock unlock];
+    NSInteger cap = MAX(1, MIN(limit, 300));
+    NSUInteger start = all.count > (NSUInteger)cap ? all.count - (NSUInteger)cap : 0;
+    return @{ @"ok": @YES, @"total": @(all.count),
+              @"records": [[[all subarrayWithRange:NSMakeRange(start, all.count - start)] reverseObjectEnumerator] allObjects] };
+}
+
++ (void)clearNotificationHistory {
+    [gNotificationLock lock];
+    [gNotifications removeAllObjects];
+    [gNotificationLock unlock];
+}
+
+@end
+
+#pragma mark - SQLite
+
+@implementation FKRuntimeKit (SQLite)
+
++ (NSArray<NSDictionary *> *)sqliteFiles {
+    NSMutableArray *files = [NSMutableArray array];
+    NSArray *roots = @[FKDocumentsPath(), FKLibraryPath(), [FKLibraryPath() stringByAppendingPathComponent:@"Application Support"]];
+    for (NSString *root in roots) {
+        NSDirectoryEnumerator *enumerator = [[NSFileManager defaultManager] enumeratorAtPath:root];
+        for (NSString *relative in enumerator) {
+            NSString *extension = relative.pathExtension.lowercaseString;
+            if (![@[@"sqlite", @"sqlite3", @"db"] containsObject:extension]) continue;
+            NSString *full = [root stringByAppendingPathComponent:relative];
+            NSDictionary *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:full error:nil];
+            [files addObject:@{ @"path": full,
+                                @"name": relative,
+                                @"bytes": attributes[NSFileSize] ?: @0 }];
+            if (files.count >= 60) break;
+        }
+    }
+    return files;
+}
+
++ (NSDictionary *)sqliteTablesAtPath:(NSString *)path {
+    sqlite3 *database = NULL;
+    if (sqlite3_open_v2(path.UTF8String, &database, SQLITE_OPEN_READONLY, NULL) != SQLITE_OK) {
+        NSString *error = database ? [NSString stringWithUTF8String:sqlite3_errmsg(database)] : @"open failed";
+        if (database) sqlite3_close(database);
+        return @{ @"ok": @NO, @"error": error ?: @"open failed" };
+    }
+    sqlite3_stmt *statement = NULL;
+    NSMutableArray *tables = [NSMutableArray array];
+    if (sqlite3_prepare_v2(database, "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
+                           -1, &statement, NULL) == SQLITE_OK) {
+        while (sqlite3_step(statement) == SQLITE_ROW) {
+            const unsigned char *name = sqlite3_column_text(statement, 0);
+            if (name) [tables addObject:[NSString stringWithUTF8String:(const char *)name]];
+        }
+    }
+    sqlite3_finalize(statement);
+    sqlite3_close(database);
+    return @{ @"ok": @YES, @"path": path, @"tables": tables };
+}
+
++ (NSDictionary *)sqliteQuery:(NSString *)sql atPath:(NSString *)path {
+    sqlite3 *database = NULL;
+    if (sqlite3_open_v2(path.UTF8String, &database, SQLITE_OPEN_READONLY, NULL) != SQLITE_OK) {
+        NSString *error = database ? [NSString stringWithUTF8String:sqlite3_errmsg(database)] : @"open failed";
+        if (database) sqlite3_close(database);
+        return @{ @"ok": @NO, @"error": error ?: @"open failed" };
+    }
+    sqlite3_stmt *statement = NULL;
+    if (sqlite3_prepare_v2(database, sql.UTF8String, -1, &statement, NULL) != SQLITE_OK) {
+        NSString *error = [NSString stringWithUTF8String:sqlite3_errmsg(database)];
+        sqlite3_close(database);
+        return @{ @"ok": @NO, @"error": error ?: @"prepare failed" };
+    }
+    int columnCount = sqlite3_column_count(statement);
+    NSMutableArray *columns = [NSMutableArray array];
+    for (int i = 0; i < columnCount; i++)
+        [columns addObject:[NSString stringWithUTF8String:sqlite3_column_name(statement, i)] ?: @"?"];
+    NSMutableArray *rows = [NSMutableArray array];
+    while (sqlite3_step(statement) == SQLITE_ROW && rows.count < 200) {
+        NSMutableDictionary *row = [NSMutableDictionary dictionary];
+        for (int i = 0; i < columnCount; i++) {
+            const unsigned char *text = sqlite3_column_text(statement, i);
+            id value = text ? [NSString stringWithUTF8String:(const char *)text] : [NSNull null];
+            row[columns[(NSUInteger)i]] = value;
+        }
+        [rows addObject:row];
+    }
+    sqlite3_finalize(statement);
+    sqlite3_close(database);
+    return @{ @"ok": @YES, @"columns": columns, @"rows": rows, @"count": @(rows.count) };
 }
 
 @end

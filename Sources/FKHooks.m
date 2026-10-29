@@ -70,6 +70,7 @@ static void FKForgeKitInitialize(void) {
 
             [FKUtilities installWebInspectorSwizzle];
             [FKRuntimeKit installNetworkRecorder];
+            [FKRuntimeKit installNotificationRecorder];
             if ([FKPrefs boolForKey:@"webInspector" defaultValue:NO])
                 [FKUtilities applyWebInspectorToOpenWebViews];
 

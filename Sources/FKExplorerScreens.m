@@ -8,6 +8,7 @@
 #import "FKRuntimeKit.h"
 #import <objc/runtime.h>
 #import <stdlib.h>
+#import "FKUtilities.h"
 
 @interface FKHierarchyViewController : UITableViewController
 + (instancetype)controllerWithView:(UIView *)view;
@@ -111,6 +112,8 @@
                                         target:self action:@selector(highlightNode)],
         [[UIBarButtonItem alloc] initWithTitle:@"Inspect" style:UIBarButtonItemStylePlain
                                         target:self action:@selector(inspectNode)],
+        [[UIBarButtonItem alloc] initWithTitle:@"Frames" style:UIBarButtonItemStylePlain
+                                        target:self action:@selector(showFrames)],
     ];
 }
 
@@ -118,6 +121,10 @@
     UIView *window = self.node.window;
     CGRect rect = [self.node convertRect:self.node.bounds toView:window];
     [FKRuntimeKit highlightRect:rect duration:2.0];
+}
+
+- (void)showFrames {
+    [FKRuntimeKit highlightAllViewsInWindow:self.node.window duration:2.5];
 }
 
 - (void)inspectNode {
@@ -381,7 +388,45 @@
     [alert addAction:[UIAlertAction actionWithTitle:@"Copy selector" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
         [UIPasteboard generalPasteboard].string = entry[@"name"];
     }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Invoke" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        [self promptInvoke:entry[@"name"] classMethod:(indexPath.section == 1)];
+    }]];
     [alert addAction:[UIAlertAction actionWithTitle:@"Close" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)promptInvoke:(NSString *)selector classMethod:(BOOL)classMethod {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:selector
+                                                                   message:@"Object pointer (empty for class methods) and comma-separated arguments"
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        field.placeholder = classMethod ? @"class method" : @"object pointer";
+        field.keyboardType = UIKeyboardTypeNumbersAndPunctuation;
+    }];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        field.placeholder = @"args, e.g. 42, hello";
+    }];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Run" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        NSString *pointerText = alert.textFields.firstObject.text ?: @"";
+        NSString *argsText = alert.textFields.lastObject.text ?: @"";
+        NSMutableArray *args = [NSMutableArray array];
+        for (NSString *piece in [argsText componentsSeparatedByString:@","]) {
+            NSString *trimmed = [piece stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            if (!trimmed.length) continue;
+            NSNumberFormatter *formatter = [[NSNumberFormatter alloc] init];
+            NSNumber *number = [formatter numberFromString:trimmed];
+            [args addObject:number ?: trimmed];
+        }
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            NSDictionary *result = [FKRuntimeKit callClass:self.className selector:selector
+                                                    object:strtoull(pointerText.UTF8String, NULL, 0)
+                                               classMethod:classMethod args:args];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                FKPresentAlert(selector, FKJSONString(result, YES));
+            });
+        });
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 
@@ -410,6 +455,8 @@
     [rows addObject:@{ @"title": @"Class", @"subtitle": info[@"class"] ?: @"" }];
     [rows addObject:@{ @"title": @"Chain", @"subtitle": [info[@"chain"] componentsJoinedByString:@" → "] ?: @"" }];
     [rows addObject:@{ @"title": @"Description", @"subtitle": info[@"description"] ?: @"" }];
+    [rows addObject:@{ @"title": @"References", @"subtitle": @"Objects whose ivars point to this one", @"chevron": @YES,
+                       @"action": ^{ [self showReferences:pointer]; } }];
     for (NSDictionary *ivar in info[@"ivars"] ?: @[]) {
         NSDictionary *value = ivar[@"value"];
         NSString *detail = [value isKindOfClass:[NSDictionary class]]
@@ -428,6 +475,28 @@
     }
     self.sections = @[ @{ @"title": @"Object", @"rows": rows } ];
     [self reloadSections];
+}
+
+- (void)showReferences:(unsigned long long)pointer {
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSDictionary *result = [FKRuntimeKit referencesTo:pointer limit:50];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSMutableArray *rows = [NSMutableArray array];
+            for (NSDictionary *reference in result[@"references"] ?: @[]) {
+                [rows addObject:@{ @"title": reference[@"class"] ?: @"?",
+                                   @"subtitle": [NSString stringWithFormat:@"%@ · %@", reference[@"ivar"], reference[@"ptr"]],
+                                   @"chevron": @YES,
+                                   @"action": ^{
+                                       [self.navigationController pushViewController:
+                                           [FKObjCObjectViewController controllerWithPointer:reference[@"ptr"]] animated:YES];
+                                   } }];
+            }
+            if (!rows.count) [rows addObject:@{ @"title": @"No references found", @"subtitle": result[@"error"] ?: @"" }];
+            FKListViewController *list = [FKListViewController listWithTitle:@"References"
+                                                                    sections:@[ @{ @"title": @"Referrers", @"rows": rows } ]];
+            [self.navigationController pushViewController:list animated:YES];
+        });
+    });
 }
 
 @end
@@ -614,6 +683,447 @@
     if (!rows.count) [rows addObject:@{ @"title": @"No cookies", @"subtitle": @"NSHTTPCookieStorage is empty" }];
     self.sections = @[ @{ @"title": [NSString stringWithFormat:@"%lu cookies", (unsigned long)cookies.count],
                           @"rows": rows } ];
+    [self reloadSections];
+}
+
+@end
+
+#pragma mark - FLEX home
+
+@interface FKHeapClassesViewController : UITableViewController
+@end
+@interface FKGlobalsViewController : FKListViewController
+@end
+@interface FKNotificationsViewController : UITableViewController
+@end
+@interface FKWebViewsViewController : UITableViewController
+@end
+@interface FKSQLiteListViewController : UITableViewController
+@end
+@interface FKSQLiteTablesViewController : UITableViewController
++ (instancetype)controllerWithPath:(NSString *)path;
+@end
+@interface FKSystemViewController : FKListViewController
+@end
+
+@implementation FKFlexViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    __weak typeof(self) weakSelf = self;
+    self.screenTitle = @"FLEX";
+    self.title = @"FLEX";
+    self.sections = @[
+        @{ @"title": @"Runtime", @"rows": @[
+            @{ @"title": @"Hierarchy", @"subtitle": @"Live view tree", @"chevron": @YES,
+               @"action": ^{ [weakSelf push:[FKHierarchyViewController controllerWithView:FKKeyWindow()]]; } },
+            @{ @"title": @"Heap", @"subtitle": @"Live objects grouped by class", @"chevron": @YES,
+               @"action": ^{ [weakSelf push:[[FKHeapClassesViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
+            @{ @"title": @"Classes", @"subtitle": @"Methods, ivars, invocation", @"chevron": @YES,
+               @"action": ^{ [weakSelf push:[[FKObjCClassListViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
+            @{ @"title": @"Libraries", @"subtitle": @"Mach-O images and exports", @"chevron": @YES,
+               @"action": ^{ [weakSelf push:[[FKLibrariesViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
+            @{ @"title": @"Network", @"subtitle": @"Captured traffic", @"chevron": @YES,
+               @"action": ^{ [weakSelf push:[[FKTrafficViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
+        ] },
+        @{ @"title": @"Data", @"rows": @[
+            @{ @"title": @"Globals", @"subtitle": @"Defaults, cookies, keychain, notifications", @"chevron": @YES,
+               @"action": ^{ [weakSelf push:[[FKGlobalsViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
+            @{ @"title": @"Files", @"subtitle": FKContainerPath(), @"chevron": @YES,
+               @"action": ^{ [weakSelf push:[FKFileBrowserViewController browserAtPath:FKContainerPath()]]; } },
+            @{ @"title": @"SQLite", @"subtitle": @"Databases in the container", @"chevron": @YES,
+               @"action": ^{ [weakSelf push:[[FKSQLiteListViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
+        ] },
+        @{ @"title": @"System", @"rows": @[
+            @{ @"title": @"System information", @"subtitle": @"Device, process, disk, image counts", @"chevron": @YES,
+               @"action": ^{ [weakSelf push:[[FKSystemViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
+        ] },
+    ];
+    [self reloadSections];
+}
+
+- (void)push:(UIViewController *)controller {
+    [self.navigationController pushViewController:controller animated:YES];
+}
+
+@end
+
+#pragma mark - Heap
+
+@interface FKHeapClassesViewController ()
+@property (nonatomic, strong) NSArray<NSDictionary *> *classes;
+@property (nonatomic, assign) BOOL loading;
+@end
+
+@implementation FKHeapClassesViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.title = @"Heap";
+    self.tableView.rowHeight = 48;
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh
+                                                                                           target:self action:@selector(reload)];
+    [self reload];
+}
+
+- (void)reload {
+    if (self.loading) return;
+    self.loading = YES;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSDictionary *result = [FKRuntimeKit heapClassCounts:300];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.classes = result[@"classes"] ?: @[];
+            self.loading = NO;
+            [self.tableView reloadData];
+        });
+    });
+}
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 1; }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    return (NSInteger)MAX(1, self.classes.count);
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    static NSString *identifier = @"heap-class";
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:identifier];
+    if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:identifier];
+    if (!self.classes.count) {
+        cell.textLabel.text = self.loading ? @"Scanning heap…" : @"No objects found";
+        cell.detailTextLabel.text = @"";
+        return cell;
+    }
+    NSDictionary *entry = self.classes[(NSUInteger)indexPath.row];
+    cell.textLabel.text = entry[@"class"];
+    cell.textLabel.font = [UIFont monospacedSystemFontOfSize:11 weight:UIFontWeightMedium];
+    cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ objects", entry[@"count"]];
+    cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    if (!self.classes.count) return;
+    NSString *className = self.classes[(NSUInteger)indexPath.row][@"class"];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSDictionary *result = [FKRuntimeKit heapObjectsOfClass:className limit:100];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSMutableArray *rows = [NSMutableArray array];
+            for (NSDictionary *object in result[@"objects"] ?: @[]) {
+                [rows addObject:@{ @"title": object[@"class"] ?: className,
+                                   @"subtitle": object[@"ptr"] ?: @"",
+                                   @"chevron": @YES,
+                                   @"action": ^{
+                                       [self.navigationController pushViewController:
+                                           [FKObjCObjectViewController controllerWithPointer:object[@"ptr"]] animated:YES];
+                                   } }];
+            }
+            if (!rows.count) [rows addObject:@{ @"title": @"No live objects", @"subtitle": result[@"error"] ?: @"" }];
+            FKListViewController *list = [FKListViewController listWithTitle:className
+                                                                    sections:@[ @{ @"title": @"Objects", @"rows": rows } ]];
+            [self.navigationController pushViewController:list animated:YES];
+        });
+    });
+}
+
+@end
+
+#pragma mark - Globals
+
+@implementation FKGlobalsViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    __weak typeof(self) weakSelf = self;
+    self.screenTitle = @"Globals";
+    self.title = @"Globals";
+    self.sections = @[ @{ @"title": @"Globals", @"rows": @[
+        @{ @"title": @"User Defaults", @"chevron": @YES,
+           @"action": ^{ [weakSelf push:[[FKDefaultsViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
+        @{ @"title": @"Cookies", @"chevron": @YES,
+           @"action": ^{ [weakSelf push:[[FKCookiesViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
+        @{ @"title": @"Keychain", @"chevron": @YES,
+           @"action": ^{ [weakSelf push:[[FKKeychainViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
+        @{ @"title": @"Notifications", @"subtitle": @"Recorded posts", @"chevron": @YES,
+           @"action": ^{ [weakSelf push:[[FKNotificationsViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
+        @{ @"title": @"Web views", @"subtitle": @"Make WKWebView inspectable", @"chevron": @YES,
+           @"action": ^{ [weakSelf push:[[FKWebViewsViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
+    ] } ];
+    [self reloadSections];
+}
+
+- (void)push:(UIViewController *)controller {
+    [self.navigationController pushViewController:controller animated:YES];
+}
+
+@end
+
+#pragma mark - Notifications
+
+@interface FKNotificationsViewController ()
+@property (nonatomic, strong) NSArray<NSDictionary *> *records;
+@end
+
+@implementation FKNotificationsViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.title = @"Notifications";
+    self.tableView.rowHeight = 50;
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Clear"
+                                                                              style:UIBarButtonItemStylePlain
+                                                                             target:self action:@selector(clear)];
+    [self reload];
+}
+
+- (void)reload {
+    self.records = [FKRuntimeKit notificationHistory:300][@"records"] ?: @[];
+    [self.tableView reloadData];
+}
+
+- (void)clear { [FKRuntimeKit clearNotificationHistory]; [self reload]; }
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 1; }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return (NSInteger)MAX(1, self.records.count); }
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    static NSString *identifier = @"notification";
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:identifier];
+    if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:identifier];
+    if (!self.records.count) {
+        cell.textLabel.text = @"No notifications recorded";
+        cell.detailTextLabel.text = @"Posts are captured after launch";
+        return cell;
+    }
+    NSDictionary *record = self.records[(NSUInteger)indexPath.row];
+    cell.textLabel.text = record[@"name"];
+    cell.textLabel.font = [UIFont monospacedSystemFontOfSize:10 weight:UIFontWeightRegular];
+    cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ · %@", record[@"object"],
+                                 FKFormatDate([NSDate dateWithTimeIntervalSince1970:[record[@"time"] doubleValue]])];
+    cell.detailTextLabel.font = [UIFont monospacedSystemFontOfSize:9 weight:UIFontWeightRegular];
+    return cell;
+}
+
+@end
+
+#pragma mark - Web views
+
+@implementation FKWebViewsViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.title = @"Web views";
+    self.tableView.rowHeight = 54;
+}
+
+- (NSArray<UIView *> *)webViews {
+    NSMutableArray *webViews = [NSMutableArray array];
+    for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows) {
+            [self collect:window into:webViews];
+        }
+    }
+    return webViews;
+}
+
+- (void)collect:(UIView *)view into:(NSMutableArray *)webViews {
+    if ([view isKindOfClass:NSClassFromString(@"WKWebView")]) [webViews addObject:view];
+    for (UIView *child in view.subviews) [self collect:child into:webViews];
+}
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 1; }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    return (NSInteger)MAX(1, [self webViews].count);
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    static NSString *identifier = @"webview";
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:identifier];
+    if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:identifier];
+    NSArray *views = [self webViews];
+    if (!views.count) {
+        cell.textLabel.text = @"No WKWebView instances";
+        cell.detailTextLabel.text = @"Open a web view first";
+        return cell;
+    }
+    UIView *view = views[(NSUInteger)indexPath.row];
+    cell.textLabel.text = NSStringFromClass([view class]);
+    cell.detailTextLabel.text = NSStringFromCGRect(view.frame);
+    return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    NSArray *views = [self webViews];
+    if (!views.count) return;
+    [FKUtilities setWebInspectorEnabled:YES];
+    [FKUtilities applyWebInspectorToOpenWebViews];
+    FKPresentAlert(@"Web inspector", @"Inspectable enabled for all web views. Attach Safari's Web Inspector to this device.");
+}
+
+@end
+
+#pragma mark - SQLite
+
+@interface FKSQLiteListViewController ()
+@property (nonatomic, strong) NSArray<NSDictionary *> *files;
+@end
+
+@implementation FKSQLiteListViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.title = @"SQLite";
+    self.tableView.rowHeight = 54;
+    self.files = [FKRuntimeKit sqliteFiles];
+}
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 1; }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    return (NSInteger)MAX(1, self.files.count);
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    static NSString *identifier = @"sqlite-file";
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:identifier];
+    if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:identifier];
+    if (!self.files.count) {
+        cell.textLabel.text = @"No databases found";
+        cell.detailTextLabel.text = @"Looked in Documents and Library";
+        return cell;
+    }
+    NSDictionary *entry = self.files[(NSUInteger)indexPath.row];
+    cell.textLabel.text = entry[@"name"];
+    cell.textLabel.font = [UIFont monospacedSystemFontOfSize:10 weight:UIFontWeightMedium];
+    cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ · %@", entry[@"path"], FKHumanSize([entry[@"bytes"] unsignedLongLongValue])];
+    cell.detailTextLabel.font = [UIFont monospacedSystemFontOfSize:8.5 weight:UIFontWeightRegular];
+    cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    if (!self.files.count) return;
+    NSDictionary *entry = self.files[(NSUInteger)indexPath.row];
+    [self.navigationController pushViewController:
+        [FKSQLiteTablesViewController controllerWithPath:entry[@"path"]] animated:YES];
+}
+
+@end
+
+@interface FKSQLiteTablesViewController ()
+@property (nonatomic, copy) NSString *path;
+@property (nonatomic, strong) NSArray<NSString *> *tables;
+@end
+
+@implementation FKSQLiteTablesViewController
+
++ (instancetype)controllerWithPath:(NSString *)path {
+    FKSQLiteTablesViewController *controller = [[FKSQLiteTablesViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+    controller.path = path;
+    return controller;
+}
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.title = self.path.lastPathComponent;
+    self.tableView.rowHeight = 46;
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Query"
+                                                                              style:UIBarButtonItemStylePlain
+                                                                             target:self action:@selector(promptQuery)];
+    NSDictionary *result = [FKRuntimeKit sqliteTablesAtPath:self.path];
+    self.tables = result[@"tables"] ?: @[];
+    if (![result[@"ok"] boolValue]) FKPresentAlert(@"SQLite", result[@"error"] ?: @"cannot open");
+}
+
+- (void)promptQuery {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"SQL query"
+                                                                   message:self.path.lastPathComponent
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        field.text = @"SELECT * FROM sqlite_master LIMIT 50";
+        field.font = [UIFont monospacedSystemFontOfSize:11 weight:UIFontWeightRegular];
+        field.autocorrectionType = UITextAutocorrectionTypeNo;
+        field.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    }];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Run" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        NSString *sql = alert.textFields.firstObject.text ?: @"";
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            NSDictionary *result = [FKRuntimeKit sqliteQuery:sql atPath:self.path];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (![result[@"ok"] boolValue]) { FKPresentAlert(@"SQLite", result[@"error"] ?: @"failed"); return; }
+                NSMutableString *text = [NSMutableString string];
+                [text appendFormat:@"%@\n\n", [result[@"columns"] componentsJoinedByString:@" | "]];
+                for (NSDictionary *row in result[@"rows"]) {
+                    NSMutableArray *values = [NSMutableArray array];
+                    for (NSString *column in result[@"columns"]) [values addObject:[row[column] description] ?: @"NULL"];
+                    [text appendFormat:@"%@\n", [values componentsJoinedByString:@" | "]];
+                }
+                [text appendFormat:@"\n%lu rows", (unsigned long)[result[@"rows"] count]];
+                [self.navigationController pushViewController:
+                    [FKTextViewController viewerWithTitle:@"Query" text:text] animated:YES];
+            });
+        });
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 1; }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    return (NSInteger)MAX(1, self.tables.count);
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    static NSString *identifier = @"sqlite-table";
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:identifier];
+    if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:identifier];
+    cell.textLabel.text = self.tables.count ? self.tables[(NSUInteger)indexPath.row] : @"No tables";
+    cell.textLabel.font = [UIFont monospacedSystemFontOfSize:11 weight:UIFontWeightRegular];
+    cell.accessoryType = self.tables.count ? UITableViewCellAccessoryDisclosureIndicator : UITableViewCellAccessoryNone;
+    return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    if (!self.tables.count) return;
+    NSString *table = [self.tables[(NSUInteger)indexPath.row] stringByReplacingOccurrencesOfString:@"\"" withString:@"\"\""];
+    NSString *sql = [NSString stringWithFormat:@"SELECT * FROM \"%@\" LIMIT 100", table];
+    NSDictionary *result = [FKRuntimeKit sqliteQuery:sql atPath:self.path];
+    if (![result[@"ok"] boolValue]) { FKPresentAlert(@"SQLite", result[@"error"] ?: @"failed"); return; }
+    NSMutableString *text = [NSMutableString string];
+    [text appendFormat:@"%@\n\n", [result[@"columns"] componentsJoinedByString:@" | "]];
+    for (NSDictionary *row in result[@"rows"]) {
+        NSMutableArray *values = [NSMutableArray array];
+        for (NSString *column in result[@"columns"]) [values addObject:[row[column] description] ?: @"NULL"];
+        [text appendFormat:@"%@\n", [values componentsJoinedByString:@" | "]];
+    }
+    [text appendFormat:@"\n%lu rows", (unsigned long)[result[@"rows"] count]];
+    [self.navigationController pushViewController:[FKTextViewController viewerWithTitle:table text:text] animated:YES];
+}
+
+@end
+
+#pragma mark - System
+
+@implementation FKSystemViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    NSMutableArray *rows = [NSMutableArray array];
+    [rows addObject:@{ @"title": @"Device", @"subtitle": FKDeviceModelIdentifier() }];
+    [rows addObject:@{ @"title": @"iOS", @"subtitle": FKOSVersionString() }];
+    [rows addObject:@{ @"title": @"App", @"subtitle": [NSString stringWithFormat:@"%@ · %@", FKAppName(), FKAppVersion()] }];
+    [rows addObject:@{ @"title": @"Bundle", @"subtitle": FKAppIdentifier() }];
+    [rows addObject:@{ @"title": @"Container", @"subtitle": FKContainerPath() }];
+    [rows addObject:@{ @"title": @"Resident memory", @"subtitle": FKHumanSize(FKResidentMemory()) }];
+    [rows addObject:@{ @"title": @"Cores", @"subtitle": [NSString stringWithFormat:@"%lu", (unsigned long)[[NSProcessInfo processInfo] processorCount]] }];
+    [rows addObject:@{ @"title": @"Uptime", @"subtitle": [NSString stringWithFormat:@"%.0f s", [[NSProcessInfo processInfo] systemUptime]] }];
+    [rows addObject:@{ @"title": @"Modules", @"subtitle": [NSString stringWithFormat:@"%lu", (unsigned long)[FKRuntimeKit modules].count] }];
+    [rows addObject:@{ @"title": @"Classes", @"subtitle": [NSString stringWithFormat:@"%d", objc_getClassList(NULL, 0)] }];
+    [rows addObject:@{ @"title": @"Network", @"subtitle": [FKLanAddresses() componentsJoinedByString:@", "] }];
+    self.sections = @[ @{ @"title": @"Process", @"rows": rows } ];
     [self reloadSections];
 }
 

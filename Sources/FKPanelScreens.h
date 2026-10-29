@@ -37,3 +37,6 @@
 
 @interface FKExplorerViewController : FKListViewController
 @end
+
+@interface FKFlexViewController : FKListViewController
+@end

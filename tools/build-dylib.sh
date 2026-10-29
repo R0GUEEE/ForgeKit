@@ -15,6 +15,6 @@ xcrun --sdk iphoneos clang \
   -o "$ROOT/build/ForgeKit.dylib" \
   -framework Foundation -framework UIKit -framework CoreGraphics \
   -framework QuartzCore -framework JavaScriptCore -framework Security \
-  -framework CoreImage -framework AVFoundation -framework MediaPlayer -framework WebKit -lz
+  -framework CoreImage -framework AVFoundation -framework MediaPlayer -framework WebKit -lsqlite3 -lz
 lipo -info "$ROOT/build/ForgeKit.dylib"
 echo "built $ROOT/build/ForgeKit.dylib"

@@ -199,7 +199,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
 
 - (UIView *)tileGrid {
     NSArray *tiles = @[
-        @{ @"title": @"Explorer", @"symbol": @"square.grid.2x2.fill", @"tint": [UIColor systemRedColor], @"action": @"explorer" },
+        @{ @"title": @"FLEX", @"symbol": @"ladybug.fill", @"tint": [UIColor systemRedColor], @"action": @"flex" },
         @{ @"title": @"Files", @"symbol": @"folder.fill", @"tint": [UIColor systemBlueColor], @"action": @"files" },
         @{ @"title": @"App", @"symbol": @"shippingbox.fill", @"tint": [UIColor systemOrangeColor], @"action": @"app" },
         @{ @"title": @"Defaults", @"symbol": @"slider.horizontal.3", @"tint": [UIColor systemTealColor], @"action": @"defaults" },
@@ -267,12 +267,12 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
 
 - (void)tileTapped:(FKTileView *)sender {
     NSInteger index = sender.tag - 200;
-    NSArray *actions = @[@"explorer", @"files", @"app", @"defaults", @"keychain", @"runtime", @"server",
+    NSArray *actions = @[@"flex", @"files", @"app", @"defaults", @"keychain", @"runtime", @"server",
                          @"log", @"device", @"settings", @"unity", @"shell", @"utilities"];
     if (index < 0 || index >= (NSInteger)actions.count) return;
     NSString *action = actions[(NSUInteger)index];
     UIViewController *controller = nil;
-    if ([action isEqualToString:@"explorer"]) controller = [[FKExplorerViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+    if ([action isEqualToString:@"flex"]) controller = [[FKFlexViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
     else if ([action isEqualToString:@"files"]) controller = [FKFileBrowserViewController browserAtPath:FKContainerPath()];
     else if ([action isEqualToString:@"defaults"]) controller = [[FKDefaultsViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
     else if ([action isEqualToString:@"keychain"]) controller = [[FKKeychainViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
