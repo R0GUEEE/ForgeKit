@@ -703,7 +703,7 @@ static MethodInfo *FKFindMethod(Il2CppClass *klass, NSString *methodName, NSInte
         void *iterator = NULL;
         const MethodInfo *candidate = NULL;
         NSInteger seen = 0;
-        while ((candidate = gAPI.class_get_methods(klass, &iterator))) {
+        while ((candidate = (const MethodInfo *)(const void *)gAPI.class_get_methods(klass, &iterator))) {
             const char *candidateName = gAPI.method_get_name(candidate);
             if (!candidateName || ![methodName isEqualToString:[NSString stringWithUTF8String:candidateName]]) continue;
             uint32_t candidateParams = gAPI.method_get_param_count ? gAPI.method_get_param_count(candidate) : 0;

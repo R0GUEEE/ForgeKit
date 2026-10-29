@@ -28,6 +28,7 @@ Built binary: `ForgeKit.dylib` — arm64 + arm64e, iOS 14.0+, 932,912 bytes.
 | App introspection | Info.plist, entitlements from the code signature and embedded profile, URL schemes, Mach-O dependencies/rpaths for the app, Frameworks and PlugIns, loaded images, keychain items, HTTP cookies. |
 | Runtime | JavaScriptCore console with `fk.*` filesystem bridge; ObjC class listing and class introspection (methods, ivars, protocols); memory stats; `dlopen` a dylib into the process. |
 | UI automation | View-tree dump with frames/text/accessibility, tap by label or point, type into fields, JPEG screenshot, native alert, open URL. |
+| Sandbox shell | 44 in-process commands (ls/tree/cat/hexdump/strings/grep/find/stat/md5/sha256/keychain/scp/download/…), terminal screen in the panel, `POST /api/shell`, MCP `shell`, and a loopback TCP listener compatible with iOS-sandbox-explorer's `client.py`. |
 | Unity / IL2CPP | 35 libtool-compatible tools: images, classes, fields, methods, live objects, singletons, UI-text scan, PlayerPrefs, dump, method patching, scripting. See [ANALYSIS.md](ANALYSIS.md). |
 | Remote access | Embedded HTTP server: MCP (JSON-RPC 2.0, Streamable HTTP) at `/mcp`, REST bridge at `/api/call`, dashboard at `/`, file download/upload at `/api/file`. |
 
@@ -159,7 +160,7 @@ curl -s http://192.168.1.42:8787/mcp \
        "params":{"name":"devkit_selftest","arguments":{}}}'
 ```
 
-### Tools (83)
+### Tools (87)
 
 **Filesystem** — `fs_roots`, `fs_list`, `fs_stat`, `fs_read`, `fs_write`,
 `fs_mkdir`, `fs_delete`, `fs_move`, `fs_copy`, `fs_search`, `fs_chmod`,
@@ -189,6 +190,8 @@ curl -s http://192.168.1.42:8787/mcp \
 `run_lua`, `save_script`, `list_scripts`, `lua_help`, `run_ui_lua`,
 `stop_ui_lua`, `ui_lua_status`, `toggle_menu`
 
+**Shell (4)** — `shell`, `shell_help`, `shell_status`, `shell_server`
+
 Paths accept `~`, `$APP`, `$CONTAINER`, `$DOCS`, `$LIB`, `$TMP`, or relative
 paths (resolved against the app container).
 
@@ -204,6 +207,50 @@ paths (resolved against the app container).
 | `GET /api/file?path=` | raw download |
 | `POST /api/file?path=` | raw upload |
 | `GET /api/status` / `GET /api/log` / `GET /api/screenshot` | shortcuts |
+
+---
+
+## Sandbox shell
+
+A second access path for people who prefer a terminal to MCP. It is the
+functionality of `test1ng-guy/iOS-sandbox-explorer` rebuilt in-process: **no popen,
+no exec, no shell expansion**, so it works in a jailed app and never escalates.
+
+```
+shell "ls -l"                       # MCP
+curl -s http://device:8787/api/shell \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"command":"tree -d 2 Documents"}'
+```
+
+Panel → **Shell** opens a terminal with a command bar, shortcuts (`help`, `ls -l`,
+`sandbox`, `containers`, `sysinfo`, `clear`) and a TCP server menu.
+
+The TCP listener speaks the same one-command-per-connection protocol as the
+reference project, so its Python client works unchanged:
+
+```sh
+iproxy 8080 8080            # USB tunnel
+python3 client.py "sandbox" --host 127.0.0.1 --port 8080
+```
+
+It binds `127.0.0.1` by default. A LAN-bind toggle exists (Shell menu), but the
+protocol itself has no authentication — leave it loopback-only unless the network
+is trusted, or use the token-protected HTTP/MCP path instead.
+
+| Group | Commands |
+|---|---|
+| Navigation | `ls [-a] [-l]`, `pwd`, `cd`, `tree [-d N]` |
+| Read | `cat`, `head [-n]`, `tail [-n]`, `hexdump [-n]`, `strings [-n]`, `base64 [-d]` |
+| Modify | `cp [-r]`, `mv`, `rm [-r]`, `mkdir [-p]`, `touch`, `chmod` |
+| Inspect | `stat`, `file`, `md5`, `sha256`, `wc`, `du [-h]`, `realpath`, `readlink` |
+| Search | `find [-name]`, `grep [-i] [-n]` |
+| System | `id`, `uname`, `whoami`, `env`, `date`, `df`, `uptime`, `bundle`, `sandbox`, `sysinfo`, `memory`, `containers` |
+| Secrets | `keychain [dump] [--class generic|internet|certificate]` |
+| Transfer | `download <path> [host_path]`, `scp -r <path> host:./dir` → `SCP:` + base64 lines |
+
+`containers` lists other apps' data/bundle containers when the sandbox exposes
+their metadata. Transfers cap a single file at 3 MB and the whole response at 4 MB.
 
 ---
 
@@ -271,6 +318,10 @@ Sources/
                       patcher (method-pointer swap + ARM64 stubs)
   FKUnityTools.m      35 Unity tools + JS Class bridge + UI overlay
   FKUnityScreens.m    class browser, object inspector, patch screen, script console
+  FKShell.h/.m        sandbox shell: 46 commands, no popen/exec
+  FKShellServer.m     loopback TCP transport (client.py compatible)
+  FKShellTools.m      4 shell MCP tools
+  FKShellScreens.m    terminal UI
   FKToolsPrivate.h    shared internal declarations
   FKHTTPServer.m      socket server, routing, auth, request log
   FKMCP.m             JSON-RPC 2.0 / MCP semantics
@@ -306,6 +357,10 @@ the app's touch handling are untouched.
   token like a password. Regenerate it from Network or Settings.
 * **iOS 14+**. `UIScene` is required for window placement; apps that still run a
   single legacy window fall back to `UIScreen` bounds.
+* **Shell scope.** The shell sees exactly what the app sees; `containers` only
+  enumerates other apps on a jailbroken device or with container entitlements.
+  The TCP listener is unauthenticated by design (loopback default); LAN binding is
+  opt-in and should be treated as trusted-network only.
 * **IL2CPP only.** The Unity tools need exportable `il2cpp_*` symbols. Stripped or
   Mono backends report unavailable. `find_objects` on plain C# classes uses a
   bounded static-field scan, not a GC heap walk; `inspect_collection` supports

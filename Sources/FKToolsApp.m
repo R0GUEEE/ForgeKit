@@ -5,6 +5,7 @@
 #import "ForgeKit.h"
 #import "FKToolsPrivate.h"
 #import "FKIL2CPP.h"
+#import "FKShell.h"
 #import <dlfcn.h>
 
 static NSDictionary *FKOk(NSDictionary *payload) {
@@ -373,6 +374,10 @@ static id FKCoerceValue(id value, NSString *type) {
                       @"token_masked": masked, @"requires_token": @([FKPrefs boolForKey:@"requireToken" defaultValue:YES]) },
         @"panel": @{ @"visible": @([[FKPanel sharedPanel] isVisible]), @"gesture": @"long-press status bar clock" },
         @"il2cpp": @{ @"available": @([FKIL2CPP available]), @"detail": [FKIL2CPP statusText] },
+        @"shell": @{ @"cwd": [FKShell sharedShell].currentDirectory,
+                     @"commands": @([[FKShell sharedShell] commandNames].count),
+                     @"tcp": @{ @"running": @([[FKShellServer sharedServer] isRunning]),
+                                @"port": @([[FKShellServer sharedServer] port]) } },
         @"tools": @([FKTools toolDefinitions].count),
         @"memory": FKHumanSize(FKResidentMemory()),
     });

@@ -212,3 +212,53 @@ panel visibility, synchronous main-thread UI automation.
 * IL2CPP paths cannot be executed off-device: they need a live Unity process. The
   bridge reports `il2cpp: unavailable` on non-Unity hosts, which is the expected
   result and the first check to run (`runtime_info`) on a real target.
+
+
+---
+
+## 9. iOS-sandbox-explorer integration
+
+Source: `github.com/test1ng-guy/iOS-sandbox-explorer` (libShell.dylib + client.py).
+Its runtime surface is a loopback TCP server that executes a fixed command set with
+Foundation APIs — no `popen`, no `exec`. That surface is now native to ForgeKit as
+`FKShell`; the IPA patcher/signing scripts in that repo stay outside the dylib
+because ForgeKit is injected after signing.
+
+### Command coverage (44 commands)
+
+| Reference | ForgeKit | Notes |
+|---|---|---|
+| `ls`, `pwd`, `cd`, `tree` | same | `-a`, `-l`, `-d N` supported |
+| `cat`, `head`, `tail`, `hexdump`, `strings`, `base64` | same | binary detection; truncation at 4 MB |
+| `cp`, `mv`, `rm`, `mkdir`, `touch`, `chmod` | same | `-r`, `-p` supported; destructive ops require `-r` for directories |
+| `stat`, `file`, `md5`, `sha256`, `wc`, `du`, `realpath`, `readlink` | same | `stat(2)` fields; digest via CommonCrypto |
+| `find`, `grep` | same | `-name` (glob/substring), `-i`, `-n`; 500 match cap |
+| `id`, `uname`, `whoami`, `env`, `date`, `df`, `uptime` | same | |
+| `bundle`, `sandbox`, `sysinfo`, `memory` | same | adds IL2CPP state and LAN addresses |
+| `keychain` | same | `dump`/`list`, `--class generic/internet/certificate` |
+| `scp`, `download` | same | `SCP:` + `FILE;rel;base64` lines, `client.py` compatible |
+| `echo`, `help`, `version` | same | |
+| — | `containers` | extra: enumerates foreign container metadata when visible |
+
+### Transport
+
+* TCP listener on `127.0.0.1:8080` by default, one command per connection, response
+  then close — wire-identical to the reference server, verified against its client
+  implementation (send command + `\n`, read to EOF).
+* `SO_NOSIGPIPE`, 10 s send/receive timeouts, 64 KB command cap, select-based accept
+  loop so `stop` cannot leave a blocked thread.
+* `shell_server` can bind `0.0.0.0` (opt-in). The protocol has no authentication, so
+  this is documented as trusted-network only; the HTTP/MCP path keeps the bearer token.
+* HTTP: `POST /api/shell` `{command,cwd}` and `GET /api/shell?command=`, token-protected.
+
+### Deliberate differences
+
+* No `popen`/`exec` (same as the reference) and no shell metacharacters, pipes or
+  redirection. `cp a b` works; `cp a b && rm c` does not.
+* Keychain output includes data as base64 and UTF-8 text when decodable, capped by
+  the 4 MB response limit.
+* `download` caps a single file at 3 MB so the base64 payload cannot blow the
+  response limit; the reference has no such guard.
+* The reference starts its server from a constructor unconditionally. ForgeKit starts
+  it from `shell_server` or the Shell screen, so a host app does not expose a port
+  unless asked.
