@@ -355,18 +355,31 @@ their metadata. Transfers cap a single file at 3 MB and the whole response at 4 
 
 ## Panel design
 
-The panel is a dark, gradient-headed dashboard:
+Dark dashboard with a gradient header (app icon, name, bundle id, live
+`MCP :port · N tools` status), four quick-action pills (start/stop MCP, traffic capture,
+WebKit inspector, flash view frames) and a compact footer.
 
-* **Header** — app icon, name, bundle id and a live `MCP :port · N tools` status line.
-* **Quick actions** — four pills that toggle the MCP server, traffic capture and the
-  WebKit inspector, and flash every view frame.
-* **Grid** — 13 glass tiles in four equal columns, sized from the available space, with
-  coloured icon plates and two-line labels. The last row is padded with clear cells, so
-  nothing overlaps and nothing scrolls.
-* **Footer** — one-line activation and endpoint hint.
+The grid is now **nine tiles in three columns**, one per distinct capability:
 
-All system screens are forced into dark mode inside the panel; the navigation bar is
-translucent black with white titles.
+| Tile | Purpose |
+|---|---|
+| **FLEX** | Runtime explorer: hierarchy, heap, classes, network, libraries, globals, files, SQLite, system |
+| **Agent** | Chat agent with tools, tweak scaffolding and provider presets |
+| **Shell** | 44-command sandbox shell with a TCP listener |
+| **Files** | Direct container browser |
+| **Unity** | IL2CPP class browser, patches, script console |
+| **Server** | MCP/HTTP server configuration, request log, endpoint QR |
+| **Console** | JavaScriptCore console plus function-hook management |
+| **Device** | Device, process and network details |
+| **Settings** | Trigger, server, diagnostics (log, capture, inspector), data |
+
+Removed as redundant: **App** and **Device** overlapped FLEX → System; **Defaults** and
+**Keychain** are inside FLEX → Globals; **Runtime** became **Console** (JSC + hooks, which
+previously lived in Utilities); **Log** is now a Settings → Diagnostics row and is also
+reachable from the Server screen; **Utilities** was dissolved — its hook manager moved to
+Console, its traffic and module views already existed in FLEX, and its web-inspector toggle
+is both a quick action and a Settings row. Dead code from the old Explorer screen and the
+Utilities controller was deleted.
 
 ## FLEX menu
 

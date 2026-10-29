@@ -1,6 +1,6 @@
 Package: com.r0guee.forgekit
 Name: ForgeKit
-Version: 2.6.0
+Version: 2.7.0
 Architecture: iphoneos-arm64
 Description: Application development toolkit dylib for jailed sideloaded apps — hidden panel, container browser, MCP server.
 Maintainer: R0GUEEE

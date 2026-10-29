@@ -32,11 +32,7 @@
 @interface FKShellViewController : UIViewController
 @end
 
-@interface FKUtilitiesViewController : FKListViewController
-@end
 
-@interface FKExplorerViewController : FKListViewController
-@end
 
 @interface FKFlexViewController : UIViewController
 @end

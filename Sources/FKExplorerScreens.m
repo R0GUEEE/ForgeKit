@@ -32,64 +32,6 @@
 @end
 
 
-#pragma mark - Explorer home
-
-@implementation FKExplorerViewController
-
-- (void)viewDidLoad {
-    [super viewDidLoad];
-    __weak typeof(self) weakSelf = self;
-    self.screenTitle = @"Explorer";
-    self.title = @"Explorer";
-    self.sections = @[
-        @{ @"title": @"Runtime", @"rows": @[
-            @{ @"title": @"View hierarchy", @"subtitle": @"Walk the live window tree", @"chevron": @YES,
-               @"action": ^{ [weakSelf push:[FKHierarchyViewController controllerWithView:FKKeyWindow()]]; } },
-            @{ @"title": @"Classes", @"subtitle": @"Every Objective-C class, methods and ivars", @"chevron": @YES,
-               @"action": ^{ [weakSelf push:[[FKObjCClassListViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
-            @{ @"title": @"Libraries", @"subtitle": @"Loaded Mach-O images and exports", @"chevron": @YES,
-               @"action": ^{ [weakSelf push:[[FKLibrariesViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
-            @{ @"title": @"Network traffic", @"subtitle": @"Captured NSURLSession requests", @"chevron": @YES,
-               @"action": ^{ [weakSelf push:[[FKTrafficViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
-        ] },
-        @{ @"title": @"Data", @"rows": @[
-            @{ @"title": @"Files", @"subtitle": FKContainerPath(), @"chevron": @YES,
-               @"action": ^{ [weakSelf push:[FKFileBrowserViewController browserAtPath:FKContainerPath()]]; } },
-            @{ @"title": @"Preferences", @"subtitle": @"Library/Preferences plists", @"chevron": @YES,
-               @"action": ^{ [weakSelf push:[[FKDefaultsViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
-            @{ @"title": @"Keychain", @"subtitle": @"Items visible to this app", @"chevron": @YES,
-               @"action": ^{ [weakSelf push:[[FKKeychainViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
-            @{ @"title": @"Cookies", @"subtitle": @"NSHTTPCookieStorage", @"chevron": @YES,
-               @"action": ^{ [weakSelf push:[[FKCookiesViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
-        ] },
-        @{ @"title": @"App", @"rows": @[
-            @{ @"title": @"Application info", @"subtitle": FKAppIdentifier(), @"chevron": @YES,
-               @"action": ^{ [weakSelf push:[weakSelf applicationInfoController]]; } },
-        ] },
-    ];
-    [self reloadSections];
-}
-
-- (UIViewController *)applicationInfoController {
-    NSMutableArray *rows = [NSMutableArray array];
-    [rows addObject:@{ @"title": @"Name", @"subtitle": FKAppName() }];
-    [rows addObject:@{ @"title": @"Bundle identifier", @"subtitle": FKAppIdentifier() }];
-    [rows addObject:@{ @"title": @"Version", @"subtitle": FKAppVersion() }];
-    [rows addObject:@{ @"title": @"Bundle", @"subtitle": FKBundlePath() }];
-    [rows addObject:@{ @"title": @"Container", @"subtitle": FKContainerPath() }];
-    [rows addObject:@{ @"title": @"Documents", @"subtitle": FKDocumentsPath() }];
-    [rows addObject:@{ @"title": @"Device", @"subtitle": [NSString stringWithFormat:@"%@ · iOS %@",
-                                                          FKDeviceModelIdentifier(), FKOSVersionString()] }];
-    [rows addObject:@{ @"title": @"Jailbroken", @"subtitle": FKIsJailbroken() ? @"yes" : @"no" }];
-    return [FKListViewController listWithTitle:@"Application" sections:@[ @{ @"title": @"Identity", @"rows": rows } ]];
-}
-
-- (void)push:(UIViewController *)controller {
-    [self.navigationController pushViewController:controller animated:YES];
-}
-
-@end
-
 #pragma mark - Hierarchy
 
 @interface FKHierarchyViewController ()

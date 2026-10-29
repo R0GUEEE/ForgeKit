@@ -5,6 +5,7 @@
 #import "ForgeKit.h"
 #import "FKPanelScreens.h"
 #import <CoreImage/CoreImage.h>
+#import "FKRuntimeKit.h"
 
 static UIView *FKCard(UIView *content) {
     UIView *card = [[UIView alloc] init];
@@ -300,7 +301,7 @@ static UIImage *FKQRCodeImage(NSString *string, CGFloat scale) {
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"JavaScript";
+    self.title = @"Console";
     self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
 
     UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:self.view.bounds];
@@ -354,9 +355,13 @@ static UIImage *FKQRCodeImage(NSString *string, CGFloat scale) {
     [self.output.heightAnchor constraintGreaterThanOrEqualToConstant:220].active = YES;
     [stack addArrangedSubview:self.output];
 
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemPlay
-                                                                                           target:self
-                                                                                           action:@selector(run)];
+    self.navigationItem.rightBarButtonItems = @[
+        [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemPlay
+                                                       target:self action:@selector(run)],
+        [[UIBarButtonItem alloc] initWithTitle:@"Hooks"
+                                        style:UIBarButtonItemStylePlain
+                                       target:self action:@selector(showHooks)],
+    ];
 }
 
 - (void)run {
@@ -376,5 +381,22 @@ static UIImage *FKQRCodeImage(NSString *string, CGFloat scale) {
 }
 
 - (void)clearOutput { self.output.text = @"—"; }
+
+- (void)showHooks {
+    NSMutableArray *rows = [NSMutableArray array];
+    for (NSDictionary *hook in [FKRuntimeKit activeHooks]) {
+        [rows addObject:@{ @"title": hook[@"source"] ?: @"?",
+                           @"subtitle": [NSString stringWithFormat:@"→ %@ · %@", hook[@"destination"] ?: @"?", hook[@"address"] ?: @""],
+                           @"destructive": @YES,
+                           @"action": ^{
+                               [FKRuntimeKit restoreSymbol:hook[@"source"] ?: @""];
+                               [self showHooks];
+                           } }];
+    }
+    if (!rows.count) [rows addObject:@{ @"title": @"No active hooks", @"subtitle": @"Use hook_redirect over MCP" }];
+    [self.navigationController pushViewController:
+        [FKListViewController listWithTitle:@"Hooks" sections:@[ @{ @"title": @"Active", @"rows": rows } ]]
+                                         animated:YES];
+}
 
 @end

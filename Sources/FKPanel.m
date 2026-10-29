@@ -381,21 +381,16 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
 - (UIView *)tileGrid {
     NSArray *tiles = @[
         @{ @"title": @"FLEX", @"symbol": @"ladybug.fill", @"tint": [UIColor systemRedColor], @"action": @"flex" },
-        @{ @"title": @"Files", @"symbol": @"folder.fill", @"tint": [UIColor systemBlueColor], @"action": @"files" },
-        @{ @"title": @"App", @"symbol": @"shippingbox.fill", @"tint": [UIColor systemOrangeColor], @"action": @"app" },
-        @{ @"title": @"Defaults", @"symbol": @"slider.horizontal.3", @"tint": [UIColor systemTealColor], @"action": @"defaults" },
-        @{ @"title": @"Keychain", @"symbol": @"key.fill", @"tint": [UIColor systemYellowColor], @"action": @"keychain" },
-        @{ @"title": @"Runtime", @"symbol": @"chevron.left.forwardslash.chevron.right", @"tint": [UIColor systemPurpleColor], @"action": @"runtime" },
-        @{ @"title": @"Network", @"symbol": @"antenna.radiowaves.left.and.right", @"tint": [UIColor systemGreenColor], @"action": @"server" },
-        @{ @"title": @"Log", @"symbol": @"text.alignleft", @"tint": [UIColor systemGrayColor], @"action": @"log" },
-        @{ @"title": @"Device", @"symbol": @"iphone", @"tint": [UIColor systemIndigoColor], @"action": @"device" },
-        @{ @"title": @"Settings", @"symbol": @"gearshape.fill", @"tint": [UIColor systemPinkColor], @"action": @"settings" },
-        @{ @"title": @"Unity", @"symbol": @"cube.transparent.fill", @"tint": [UIColor systemBrownColor], @"action": @"unity" },
-        @{ @"title": @"Shell", @"symbol": @"terminal.fill", @"tint": [UIColor systemGreenColor], @"action": @"shell" },
-        @{ @"title": @"Utilities", @"symbol": @"wrench.and.screwdriver.fill", @"tint": [UIColor systemGrayColor], @"action": @"utilities" },
         @{ @"title": @"Agent", @"symbol": @"sparkles", @"tint": [UIColor systemBlueColor], @"action": @"agent" },
+        @{ @"title": @"Shell", @"symbol": @"terminal.fill", @"tint": [UIColor systemGreenColor], @"action": @"shell" },
+        @{ @"title": @"Files", @"symbol": @"folder.fill", @"tint": [UIColor systemOrangeColor], @"action": @"files" },
+        @{ @"title": @"Unity", @"symbol": @"cube.transparent.fill", @"tint": [UIColor systemBrownColor], @"action": @"unity" },
+        @{ @"title": @"Server", @"symbol": @"antenna.radiowaves.left.and.right", @"tint": [UIColor systemTealColor], @"action": @"server" },
+        @{ @"title": @"Console", @"symbol": @"chevron.left.forwardslash.chevron.right", @"tint": [UIColor systemPurpleColor], @"action": @"console" },
+        @{ @"title": @"Device", @"symbol": @"iphone", @"tint": [UIColor systemIndigoColor], @"action": @"device" },
+        @{ @"title": @"Settings", @"symbol": @"gearshape.fill", @"tint": [UIColor systemGrayColor], @"action": @"settings" },
     ];
-    NSInteger columns = 4;
+    NSInteger columns = 3;
     NSInteger rows = ((NSInteger)tiles.count + columns - 1) / columns;
     UIStackView *grid = [[UIStackView alloc] init];
     grid.axis = UILayoutConstraintAxisVertical;
@@ -449,25 +444,20 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
 
 - (void)tileTapped:(FKTileView *)sender {
     NSInteger index = sender.tag - 200;
-    NSArray *actions = @[@"flex", @"files", @"app", @"defaults", @"keychain", @"runtime", @"server",
-                         @"log", @"device", @"settings", @"unity", @"shell", @"utilities", @"agent"];
+    NSArray *actions = @[@"flex", @"agent", @"shell", @"files", @"unity", @"server",
+                         @"console", @"device", @"settings"];
     if (index < 0 || index >= (NSInteger)actions.count) return;
     NSString *action = actions[(NSUInteger)index];
     UIViewController *controller = nil;
     if ([action isEqualToString:@"flex"]) controller = [[FKFlexViewController alloc] init];
-    else if ([action isEqualToString:@"files"]) controller = [FKFileBrowserViewController browserAtPath:FKContainerPath()];
-    else if ([action isEqualToString:@"defaults"]) controller = [[FKDefaultsViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
-    else if ([action isEqualToString:@"keychain"]) controller = [[FKKeychainViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
-    else if ([action isEqualToString:@"runtime"]) controller = [[FKRuntimeViewController alloc] init];
-    else if ([action isEqualToString:@"server"]) controller = [[FKServerViewController alloc] init];
-    else if ([action isEqualToString:@"settings"]) controller = [[FKSettingsViewController alloc] init];
-    else if ([action isEqualToString:@"log"]) controller = [FKLogViewController logController];
-    else if ([action isEqualToString:@"app"]) controller = [self appInfoController];
-    else if ([action isEqualToString:@"device"]) controller = [self deviceController];
-    else if ([action isEqualToString:@"unity"]) controller = [[FKUnityViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
-    else if ([action isEqualToString:@"shell"]) controller = [[FKShellViewController alloc] init];
-    else if ([action isEqualToString:@"utilities"]) controller = [[FKUtilitiesViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
     else if ([action isEqualToString:@"agent"]) controller = [[FKAgentChatViewController alloc] init];
+    else if ([action isEqualToString:@"shell"]) controller = [[FKShellViewController alloc] init];
+    else if ([action isEqualToString:@"files"]) controller = [FKFileBrowserViewController browserAtPath:FKContainerPath()];
+    else if ([action isEqualToString:@"unity"]) controller = [[FKUnityViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+    else if ([action isEqualToString:@"server"]) controller = [[FKServerViewController alloc] init];
+    else if ([action isEqualToString:@"console"]) controller = [[FKRuntimeViewController alloc] init];
+    else if ([action isEqualToString:@"device"]) controller = [self deviceController];
+    else if ([action isEqualToString:@"settings"]) controller = [[FKSettingsViewController alloc] init];
     if (controller) [self.navigationController pushViewController:controller animated:YES];
 }
 

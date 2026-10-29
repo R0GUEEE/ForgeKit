@@ -1,4 +1,5 @@
 #import "ForgeKit.h"
+#import "FKUtilities.h"
 #import "FKPanelScreens.h"
 #import <Security/Security.h>
 
@@ -276,6 +277,21 @@
         [weakSelf rebuild];
     };
     NSMutableArray *sections = [NSMutableArray array];
+
+    [sections addObject:@{ @"title": @"Diagnostics", @"rows": @[
+        @{ @"title": @"Activity log", @"subtitle": @"Loader, agent and server events", @"chevron": @YES,
+           @"action": ^{
+               [self.navigationController pushViewController:[FKLogViewController logController] animated:YES];
+           } },
+        @{ @"title": @"Traffic capture",
+           @"subtitle": @"Record NSURLSession requests for FLEX → Network",
+           @"toggle": ^(BOOL on) { [FKPrefs setBool:on forKey:@"netCapture"]; },
+           @"toggleValue": @([FKPrefs boolForKey:@"netCapture" defaultValue:YES]) },
+        @{ @"title": @"WebKit inspector",
+           @"subtitle": @"Make WKWebView instances inspectable",
+           @"toggle": ^(BOOL on) { [FKUtilities setWebInspectorEnabled:on]; },
+           @"toggleValue": @([FKPrefs boolForKey:@"webInspector" defaultValue:NO]) },
+    ] }];
 
     [sections addObject:@{ @"title": @"Trigger", @"rows": @[
         @{ @"title": @"Activation", @"subtitle": @"Long-press the time in the status bar" },
