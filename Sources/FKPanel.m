@@ -625,6 +625,138 @@ static CGRect FKStatusBarClockFrame(void) {
 @interface FKPanel () <UIGestureRecognizerDelegate>
 @end
 
+
+#pragma mark - Window host
+
+// Presents the toolkit as a floating card instead of a full-screen takeover.
+@interface FKWindowHostViewController : UIViewController <UIGestureRecognizerDelegate>
+@property (nonatomic, strong) UIViewController *content;
+@property (nonatomic, strong) UIView *dimView;
+@property (nonatomic, strong) UIView *cardView;
+@property (nonatomic, strong) NSLayoutConstraint *cardWidth;
+@property (nonatomic, strong) NSLayoutConstraint *cardHeight;
+@property (nonatomic, strong) NSLayoutConstraint *cardCenterX;
+@property (nonatomic, strong) NSLayoutConstraint *cardCenterY;
+@property (nonatomic, assign) CGPoint panStart;
+@end
+
+@implementation FKWindowHostViewController
+
+- (instancetype)initWithContent:(UIViewController *)content {
+    self = [super initWithNibName:nil bundle:nil];
+    if (self) _content = content;
+    return self;
+}
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.view.backgroundColor = [UIColor clearColor];
+
+    self.dimView = [[UIView alloc] init];
+    self.dimView.backgroundColor = [UIColor colorWithWhite:0 alpha:0.42];
+    self.dimView.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.dimView];
+    [self.dimView addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dimTapped)]];
+
+    self.cardView = [[UIView alloc] init];
+    self.cardView.backgroundColor = [UIColor systemGroupedBackgroundColor];
+    self.cardView.layer.cornerRadius = 22;
+    self.cardView.layer.cornerCurve = kCACornerCurveContinuous;
+    self.cardView.layer.borderWidth = 0.5;
+    self.cardView.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.16].CGColor;
+    self.cardView.clipsToBounds = YES;
+    self.cardView.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.cardView];
+
+    self.cardWidth = [self.cardView.widthAnchor constraintEqualToConstant:360];
+    self.cardHeight = [self.cardView.heightAnchor constraintEqualToConstant:560];
+    self.cardCenterX = [self.cardView.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor];
+    self.cardCenterY = [self.cardView.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor];
+    [NSLayoutConstraint activateConstraints:@[
+        [self.dimView.topAnchor constraintEqualToAnchor:self.view.topAnchor],
+        [self.dimView.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
+        [self.dimView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+        [self.dimView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+        self.cardWidth, self.cardHeight, self.cardCenterX, self.cardCenterY,
+    ]];
+
+    if (self.content) {
+        [self addChildViewController:self.content];
+        self.content.view.translatesAutoresizingMaskIntoConstraints = NO;
+        [self.cardView addSubview:self.content.view];
+        [NSLayoutConstraint activateConstraints:@[
+            [self.content.view.topAnchor constraintEqualToAnchor:self.cardView.topAnchor],
+            [self.content.view.bottomAnchor constraintEqualToAnchor:self.cardView.bottomAnchor],
+            [self.content.view.leadingAnchor constraintEqualToAnchor:self.cardView.leadingAnchor],
+            [self.content.view.trailingAnchor constraintEqualToAnchor:self.cardView.trailingAnchor],
+        ]];
+        [self.content didMoveToParentViewController:self];
+    }
+
+    if ([self.content isKindOfClass:[UINavigationController class]]) {
+        UINavigationBar *bar = ((UINavigationController *)self.content).navigationBar;
+        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
+        pan.delegate = self;
+        pan.cancelsTouchesInView = NO;
+        [bar addGestureRecognizer:pan];
+    }
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(keyboardChanged:)
+                                                 name:UIKeyboardWillChangeFrameNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(keyboardHidden:)
+                                                 name:UIKeyboardWillHideNotification object:nil];
+}
+
+- (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
+
+- (void)viewWillLayoutSubviews {
+    [super viewWillLayoutSubviews];
+    CGFloat width = MIN(MAX(320, self.view.bounds.size.width - 28), 400);
+    CGFloat height = MIN(self.view.bounds.size.height - 80, 620);
+    if (self.cardWidth.constant != width) self.cardWidth.constant = width;
+    if (self.cardHeight.constant != height) self.cardHeight.constant = height;
+}
+
+- (void)dimTapped { [[FKPanel sharedPanel] hide]; }
+
+- (void)handlePan:(UIPanGestureRecognizer *)gesture {
+    CGPoint translation = [gesture translationInView:self.view];
+    if (gesture.state == UIGestureRecognizerStateBegan) {
+        self.panStart = CGPointMake(self.cardCenterX.constant, self.cardCenterY.constant);
+    } else if (gesture.state == UIGestureRecognizerStateChanged) {
+        CGFloat x = self.panStart.x + translation.x;
+        CGFloat y = self.panStart.y + translation.y;
+        CGFloat maxX = (self.view.bounds.size.width - self.cardWidth.constant) / 2 - 6;
+        CGFloat maxY = (self.view.bounds.size.height - self.cardHeight.constant) / 2 - 6;
+        self.cardCenterX.constant = MAX(-maxX, MIN(maxX, x));
+        self.cardCenterY.constant = MAX(-MAX(0, maxY), MIN(MAX(0, maxY), y));
+    } else if (gesture.state == UIGestureRecognizerStateEnded ||
+               gesture.state == UIGestureRecognizerStateCancelled) {
+        self.panStart = CGPointZero;
+    }
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
+shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)other {
+    return YES;
+}
+
+- (void)keyboardChanged:(NSNotification *)notification {
+    CGRect frame = [notification.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue];
+    CGRect converted = [self.view convertRect:frame fromView:nil];
+    CGFloat overlap = MAX(0, self.view.bounds.size.height - converted.origin.y);
+    CGFloat shift = MIN(overlap, MAX(0, (self.view.bounds.size.height - self.cardHeight.constant) / 2 + 8));
+    self.cardCenterY.constant = -shift;
+    [UIView animateWithDuration:0.2 animations:^{ [self.view layoutIfNeeded]; }];
+}
+
+- (void)keyboardHidden:(NSNotification *)notification {
+    self.cardCenterY.constant = 0;
+    [UIView animateWithDuration:0.2 animations:^{ [self.view layoutIfNeeded]; }];
+}
+
+@end
+
 @implementation FKPanel {
     UIWindow *_window;
     UINavigationController *_navigation;
@@ -682,7 +814,7 @@ static CGRect FKStatusBarClockFrame(void) {
     UIWindow *window = scene ? [[UIWindow alloc] initWithWindowScene:scene]
                              : [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     window.windowLevel = UIWindowLevelAlert + 100;
-    window.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.6];
+    window.backgroundColor = [UIColor clearColor];
     window.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
 
     FKPanelHomeViewController *home = [[FKPanelHomeViewController alloc] init];
@@ -694,7 +826,7 @@ static CGRect FKStatusBarClockFrame(void) {
     appearance.titleTextAttributes = @{ NSForegroundColorAttributeName: [UIColor whiteColor] };
     navigation.navigationBar.standardAppearance = appearance;
     navigation.navigationBar.scrollEdgeAppearance = appearance;
-    window.rootViewController = navigation;
+    window.rootViewController = [[FKWindowHostViewController alloc] initWithContent:navigation];
 
     _previousKeyWindow = FKKeyWindow();
     window.alpha = 0;

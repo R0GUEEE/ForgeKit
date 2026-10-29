@@ -355,7 +355,12 @@ their metadata. Transfers cap a single file at 3 MB and the whole response at 4 
 
 ## Panel design
 
-Dark dashboard with a gradient header (app icon, name, bundle id, live
+The toolkit opens as a **floating window**, not a full-screen takeover: a rounded,
+shadowless 22 pt card (max 400 × 620, centred, dimmed backdrop) that can be dragged by its
+navigation bar and dismissed by tapping outside or with Done. Typing lifts the card above
+the keyboard instead of resizing the whole screen.
+
+Inside the card: a gradient header (app icon, name, bundle id, live
 `MCP :port · N tools` status), four quick-action pills (start/stop MCP, traffic capture,
 WebKit inspector, flash view frames) and a compact footer.
 
