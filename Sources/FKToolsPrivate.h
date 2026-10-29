@@ -38,3 +38,8 @@
 + (NSDictionary *)appContainers;
 + (NSDictionary *)selfTest;
 @end
+
+@interface FKShellTools : NSObject
++ (NSArray<NSDictionary *> *)definitions;
++ (NSDictionary *)callTool:(NSString *)name arguments:(NSDictionary *)arguments;
+@end

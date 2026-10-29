@@ -3,6 +3,7 @@
 //
 
 #import "ForgeKit.h"
+#import "FKShell.h"
 #import <sys/socket.h>
 #import <netinet/in.h>
 #import <arpa/inet.h>
@@ -423,6 +424,27 @@ static BOOL FKSendAll(int fd, const void *bytes, size_t length) {
             return [self jsonResponse:@{ @"ok": @NO, @"error": writeError.localizedDescription ?: @"write failed" } status:500];
         }
         return [self jsonResponse:@{ @"ok": @YES, @"path": filePath, @"bytes": @((unsigned long long)body.length) } status:200];
+    }
+    if ([path isEqualToString:@"/api/shell"]) {
+        NSString *command = query[@"command"];
+        NSString *cwd = query[@"cwd"];
+        if ([method isEqualToString:@"POST"] && body.length) {
+            id payload = [NSJSONSerialization JSONObjectWithData:body options:0 error:nil];
+            if ([payload isKindOfClass:[NSDictionary class]]) {
+                command = payload[@"command"] ?: command;
+                cwd = payload[@"cwd"] ?: cwd;
+            } else {
+                command = [[NSString alloc] initWithData:body encoding:NSUTF8StringEncoding];
+            }
+        }
+        if (!command.length) return [self jsonResponse:@{ @"ok": @NO, @"error": @"command required" } status:400];
+        FKShell *shell = [FKShell sharedShell];
+        NSString *output = [shell execute:command inDirectory:cwd.length ? cwd : shell.currentDirectory];
+        return [self jsonResponse:@{ @"ok": @YES, @"output": output ?: @"", @"cwd": shell.currentDirectory } status:200];
+    }
+    if ([path isEqualToString:@"/api/shell/help"]) {
+        return [self jsonResponse:@{ @"ok": @YES, @"commands": [[FKShell sharedShell] commandNames],
+                                     @"help": [FKShell helpText] } status:200];
     }
     if ([path isEqualToString:@"/api/call"]) {
         NSDictionary *arguments = @{};

@@ -201,6 +201,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
         @{ @"title": @"Device", @"symbol": @"iphone", @"tint": [UIColor systemIndigoColor], @"action": @"device" },
         @{ @"title": @"Settings", @"symbol": @"gearshape.fill", @"tint": [UIColor systemPinkColor], @"action": @"settings" },
         @{ @"title": @"Unity", @"symbol": @"cube.transparent.fill", @"tint": [UIColor systemBrownColor], @"action": @"unity" },
+        @{ @"title": @"Shell", @"symbol": @"terminal.fill", @"tint": [UIColor systemGreenColor], @"action": @"shell" },
     ];
 
     UIStackView *grid = [[UIStackView alloc] init];
@@ -260,7 +261,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
 
 - (void)tileTapped:(FKTileView *)sender {
     NSInteger index = sender.tag - 200;
-    NSArray *actions = @[@"files", @"app", @"defaults", @"keychain", @"runtime", @"server", @"log", @"device", @"settings", @"unity"];
+    NSArray *actions = @[@"files", @"app", @"defaults", @"keychain", @"runtime", @"server", @"log", @"device", @"settings", @"unity", @"shell"];
     if (index < 0 || index >= (NSInteger)actions.count) return;
     NSString *action = actions[(NSUInteger)index];
     UIViewController *controller = nil;
@@ -274,6 +275,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
     else if ([action isEqualToString:@"app"]) controller = [self appInfoController];
     else if ([action isEqualToString:@"device"]) controller = [self deviceController];
     else if ([action isEqualToString:@"unity"]) controller = [[FKUnityViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+    else if ([action isEqualToString:@"shell"]) controller = [[FKShellViewController alloc] init];
     if (controller) [self.navigationController pushViewController:controller animated:YES];
 }
 

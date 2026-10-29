@@ -180,6 +180,7 @@ static NSInteger FKIntArg(NSDictionary *args, NSString *key, NSInteger fallback)
         @{}, @[]);
 
     [tools addObjectsFromArray:[FKUnityTools definitions]];
+    [tools addObjectsFromArray:[FKShellTools definitions]];
     return tools;
 }
 
@@ -243,6 +244,8 @@ static NSInteger FKIntArg(NSDictionary *args, NSString *key, NSInteger fallback)
 
         NSDictionary *unityResult = [FKUnityTools callTool:name arguments:args];
         if (unityResult) return unityResult;
+        NSDictionary *shellResult = [FKShellTools callTool:name arguments:args];
+        if (shellResult) return shellResult;
 
         return FKFail([NSString stringWithFormat:@"unknown tool %@", name]);
     } @catch (NSException *exception) {

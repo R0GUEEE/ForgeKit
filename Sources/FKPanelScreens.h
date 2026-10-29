@@ -28,3 +28,6 @@
 
 @interface FKScriptConsoleViewController : UIViewController
 @end
+
+@interface FKShellViewController : UIViewController
+@end
