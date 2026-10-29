@@ -133,10 +133,33 @@
     if (![FKAgent apiKey].length) {
         [self append:@"No API key configured. Open ⚙︎ to add an OpenAI-compatible key, or set it with agent_config over MCP." system:YES];
     } else {
-        [self append:[NSString stringWithFormat:@"Agent ready · %@ · mutations %@",
+        [self append:[NSString stringWithFormat:@"Agent ready · %@ · %@ · mutations %@",
                       [FKAgent sharedAgent].model ?: @"?",
+                      [FKAgent sharedAgent].provider ?: @"custom",
                       [FKAgent sharedAgent].allowMutations ? @"on" : @"off"] system:YES];
     }
+    [self renderPersistedHistory];
+}
+
+- (void)renderPersistedHistory {
+    NSArray<NSDictionary *> *history = [[FKAgent sharedAgent] transcript];
+    if (!history.count) return;
+    NSInteger start = MAX(0, (NSInteger)history.count - 60);
+    [self append:[NSString stringWithFormat:@"· restored %lu earlier messages", (unsigned long)history.count] system:YES];
+    for (NSInteger index = start; index < (NSInteger)history.count; index++) {
+        NSDictionary *message = history[(NSUInteger)index];
+        NSString *role = message[@"role"];
+        id content = message[@"content"];
+        if ([role isEqualToString:@"user"] && [content isKindOfClass:[NSString class]] && [content length]) {
+            [self append:[NSString stringWithFormat:@"you: %@", content] system:NO];
+        } else if ([role isEqualToString:@"assistant"]) {
+            if ([content isKindOfClass:[NSString class]] && [content length])
+                [self append:[NSString stringWithFormat:@"agent: %@", content] system:NO];
+            else if ([message[@"tool_calls"] isKindOfClass:[NSArray class]])
+                [self append:@"· planned tool calls" system:YES];
+        }
+    }
+    [self append:@"" system:YES];
 }
 
 - (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }

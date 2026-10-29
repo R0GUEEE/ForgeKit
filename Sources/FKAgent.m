@@ -94,12 +94,9 @@ static NSString *FKAgentNormalizedEndpoint(NSString *raw) {
     if (![value.lowercaseString hasPrefix:@"http://"] && ![value.lowercaseString hasPrefix:@"https://"])
         value = [@"https://" stringByAppendingString:value];
     while ([value hasSuffix:@"/"]) value = [value substringToIndex:value.length - 1];
-    if ([value rangeOfString:@"chat/completions"].location == NSNotFound) {
-        if ([value hasSuffix:@"/v1"]) value = [value stringByAppendingString:@"/chat/completions"];
-        else if ([value rangeOfString:@"/v1/"].location != NSNotFound)
-            value = [value stringByAppendingString:@"chat/completions"];
-        else value = [value stringByAppendingString:@"/v1/chat/completions"];
-    }
+    // The endpoint is used verbatim. A scheme is added when missing and a trailing
+    // slash is trimmed, but no API path is ever appended: whatever the user or the
+    // provider preset specifies is what gets requested.
     return value;
 }
 
@@ -129,6 +126,7 @@ static BOOL FKAgentToolMutates(NSString *name) {
     BOOL _toolsDisabled;
     NSURLSessionDataTask *_currentTask;
     NSDictionary *_lastUsage;
+    dispatch_queue_t _persistQueue;
     NSLock *_runLock;
     NSMutableArray<NSDictionary *> *_activity;
 }
@@ -146,6 +144,8 @@ static BOOL FKAgentToolMutates(NSString *name) {
         _history = [NSMutableArray array];
         _activity = [NSMutableArray array];
         _runLock = [[NSLock alloc] init];
+        _persistQueue = dispatch_queue_create("com.forgekit.agent.history", DISPATCH_QUEUE_SERIAL);
+        [self loadPersistedHistory];
         _maxSteps = MAX(1, MIN([FKPrefs integerForKey:@"agentMaxSteps" defaultValue:8], 24));
         _temperature = [FKPrefs doubleForKey:@"agentTemperature" defaultValue:0.2];
         _maxTokens = [FKPrefs integerForKey:@"agentMaxTokens" defaultValue:0];
@@ -400,6 +400,46 @@ static BOOL FKAgentToolMutates(NSString *name) {
     [task cancel];
 }
 
+#pragma mark - Persistence
+
+- (NSString *)historyPath {
+    NSString *directory = [FKDocumentsPath() stringByAppendingPathComponent:@"ForgeKit/agent"];
+    [[NSFileManager defaultManager] createDirectoryAtPath:directory
+                              withIntermediateDirectories:YES attributes:nil error:nil];
+    return [directory stringByAppendingPathComponent:@"history.json"];
+}
+
+- (void)loadPersistedHistory {
+    NSData *data = [NSData dataWithContentsOfFile:[self historyPath]];
+    if (!data.length) return;
+    id json = FKAgentJSONValue(data);
+    if (![json isKindOfClass:[NSArray class]]) return;
+    NSMutableArray *history = [NSMutableArray array];
+    for (id entry in (NSArray *)json) {
+        if ([entry isKindOfClass:[NSDictionary class]] && entry[@"role"]) [history addObject:entry];
+    }
+    if (history.count) {
+        _history = history;
+        FKLog(@"agent: restored %lu history messages", (unsigned long)history.count);
+    }
+}
+
+- (void)trimHistoryLocked {
+    while (_history.count > 400) [_history removeObjectAtIndex:0];
+    while (_history.count && [_history.firstObject[@"role"] isEqualToString:@"tool"])
+        [_history removeObjectAtIndex:0];
+}
+
+- (void)persistHistory {
+    [_runLock lock];
+    NSArray *snapshot = [_history copy];
+    [_runLock unlock];
+    dispatch_async(_persistQueue, ^{
+        NSData *data = [NSJSONSerialization dataWithJSONObject:snapshot options:0 error:nil];
+        if (data) [data writeToFile:[self historyPath] options:NSDataWritingAtomic error:nil];
+    });
+}
+
 + (BOOL)toolMutates:(NSString *)name { return FKAgentToolMutates(name); }
 
 - (BOOL)toolAllowed:(NSString *)name {
@@ -430,6 +470,9 @@ static BOOL FKAgentToolMutates(NSString *name) {
     [_history removeAllObjects];
     [_activity removeAllObjects];
     [_runLock unlock];
+    dispatch_async(_persistQueue, ^{
+        [[NSFileManager defaultManager] removeItemAtPath:[self historyPath] error:nil];
+    });
 }
 
 - (NSArray<NSDictionary *> *)transcript {
@@ -623,7 +666,9 @@ static BOOL FKAgentToolMutates(NSString *name) {
             [self->_history addObject:@{ @"role": @"assistant",
                                          @"content": message[@"content"] ?: [NSNull null],
                                          @"tool_calls": toolCalls }];
+            [self trimHistoryLocked];
             [self->_runLock unlock];
+            [self persistHistory];
             for (NSDictionary *call in toolCalls) {
                 NSDictionary *function = call[@"function"];
                 NSString *name = function[@"name"];
@@ -638,7 +683,9 @@ static BOOL FKAgentToolMutates(NSString *name) {
                 [self->_history addObject:@{ @"role": @"tool",
                                              @"tool_call_id": call[@"id"] ?: @"",
                                              @"content": encoded ?: @"{}" }];
+                [self trimHistoryLocked];
                 [self->_runLock unlock];
+                [self persistHistory];
             }
             [self step:step + 1 completion:completion];
             return;
@@ -646,7 +693,9 @@ static BOOL FKAgentToolMutates(NSString *name) {
         NSString *content = [message[@"content"] isKindOfClass:[NSString class]] ? message[@"content"] : @"";
         [self->_runLock lock];
         [self->_history addObject:@{ @"role": @"assistant", @"content": content ?: @"" }];
+        [self trimHistoryLocked];
         [self->_runLock unlock];
+        [self persistHistory];
         completion(content, self->_activity, nil);
     }];
     [_runLock lock];
@@ -706,8 +755,10 @@ static BOOL FKAgentToolMutates(NSString *name) {
     _toolsDisabled = NO;
     _lastUsage = @{};
     [_history addObject:@{ @"role": @"user", @"content": prompt }];
+    [self trimHistoryLocked];
     [_activity removeAllObjects];
     [_runLock unlock];
+    [self persistHistory];
     [self step:0 completion:completion];
 }
 

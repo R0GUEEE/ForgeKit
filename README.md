@@ -435,11 +435,17 @@ Panel → Agent → ✎   new conversation
   instead of retrying.
 * **Providers are presets.** Choosing one sets the official base URL, default model and any
   required headers (e.g. `anthropic-version`, OpenRouter attribution).
-* **Endpoint is normalised.** `https://api.openai.com`, `…/v1` and a full
-  `/v1/chat/completions` URL all resolve to the same request path.
+* **Endpoint is used verbatim.** A missing `https://` scheme is added and a trailing
+  slash is trimmed; no API path is ever appended. Provider presets already carry their
+  full `/chat/completions` URL, so switching providers just works, and a custom gateway
+  path is sent exactly as typed.
 * **Empty replies are explained.** An empty body now reports the HTTP status and host; a
   gateway that returns an empty `200` for tool-carrying requests is retried once without
   tool schemas so the chat still answers.
+* **History is persistent.** The conversation is written to
+  `Documents/ForgeKit/agent/history.json` after every message and restored when the Agent
+  screen reopens or the app relaunches. Only the explicit **New conversation** button
+  (✎) or *Clear conversation* in settings erases it.
 * **API key** is stored in the keychain (`com.r0guee.forgekit.agent`), never in defaults.
 * **Presets** seed three workflows: inspect the app, build a tweak, patch a value.
 
