@@ -3,6 +3,7 @@
 //
 
 #import "ForgeKit.h"
+#import "FKToolsPrivate.h"
 #import <dlfcn.h>
 
 static NSDictionary *FKOk(NSDictionary *payload) {
@@ -32,6 +33,44 @@ static NSInteger FKIntArg(NSDictionary *args, NSString *key, NSInteger fallback)
     id value = args[key];
     if ([value respondsToSelector:@selector(integerValue)]) return [value integerValue];
     return fallback;
+}
+
+
+static id FKObjectAtKeyPath(NSDictionary *dictionary, NSString *keyPath) {
+    id current = dictionary;
+    for (NSString *part in [keyPath componentsSeparatedByString:@"."]) {
+        if (![current isKindOfClass:[NSDictionary class]]) return nil;
+        current = ((NSDictionary *)current)[part];
+        if (!current) return nil;
+    }
+    return current;
+}
+
+static BOOL FKSetObjectAtKeyPath(NSMutableDictionary *dictionary, NSString *keyPath, id value) {
+    NSArray *parts = [keyPath componentsSeparatedByString:@"."];
+    if (!parts.count) return NO;
+    NSMutableDictionary *current = dictionary;
+    for (NSUInteger i = 0; i < parts.count - 1; i++) {
+        id next = current[parts[i]];
+        if (![next isKindOfClass:[NSMutableDictionary class]]) {
+            next = [NSMutableDictionary dictionary];
+            current[parts[i]] = next;
+        }
+        current = next;
+    }
+    current[parts.lastObject] = value ?: [NSNull null];
+    return YES;
+}
+
+static id FKCoerceValue(id value, NSString *type) {
+    if (!type.length) return value;
+    if ([type isEqualToString:@"string"]) return [value description] ?: @"";
+    if ([type isEqualToString:@"bool"]) return @([value boolValue]);
+    if ([type isEqualToString:@"int"] || [type isEqualToString:@"number"]) return @([value longLongValue]);
+    if ([type isEqualToString:@"float"]) return @([value doubleValue]);
+    if ([type isEqualToString:@"data"] && [value isKindOfClass:[NSString class]])
+        return [[NSData alloc] initWithBase64EncodedString:value options:0] ?: [NSData data];
+    return value;
 }
 
 @interface FKTools (Application)

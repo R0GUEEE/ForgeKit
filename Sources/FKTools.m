@@ -3,6 +3,7 @@
 //
 
 #import "ForgeKit.h"
+#import "FKToolsPrivate.h"
 #import <sys/stat.h>
 
 static NSDictionary *FKOk(NSDictionary *payload) {

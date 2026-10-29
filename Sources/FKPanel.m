@@ -312,7 +312,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
     if (binaries.count) {
         NSMutableArray *rows = [NSMutableArray array];
         for (NSDictionary *binary in binaries) {
-            [rows addObject:@{ @"title": binary[@"path"].lastPathComponent, @"subtitle": binary[@"path"],
+            [rows addObject:@{ @"title": [binary[@"path"] lastPathComponent], @"subtitle": binary[@"path"],
                                @"value": FKHumanSize([binary[@"size"] unsignedLongLongValue]) }];
         }
         [sections addObject:@{ @"title": @"Mach-O images", @"rows": rows }];
