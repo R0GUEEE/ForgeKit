@@ -320,3 +320,34 @@ Deliberate omissions: no Stalker, no agent protocol, no JS `Interceptor.attach` 
 (they require cross-thread calls into JavaScriptCore with register preservation), and no
 trampoline for calling the original function after a redirect. All are documented in the
 README rather than faked.
+
+
+---
+
+## 12. v1.8.0: native FLEX explorer UI and auto-fit home
+
+### Explorer
+
+`FKExplorerScreens.m` adds the interactive layer FLEX provides, on top of `FKRuntimeKit`:
+
+* **Hierarchy** — recursive view-tree drill-down with `Highlight` (converted to screen
+  coordinates and rendered by the overlay window) and `Inspect` (ivar dump via
+  `objectInfo:`).
+* **Classes** — `objc_getClassList` list with search; detail splits instance methods,
+  class methods, ivars and properties; method rows show type encodings and copy the
+  selector; `Instances` runs the malloc-zone heap scan and pushes the object browser.
+* **Object browser** — class chain, size, description and every ivar; object-valued
+  ivars are navigable.
+* **Libraries** — dyld images with base/size and per-module `LC_SYMTAB` exports with
+  live filtering.
+* **Traffic / Data** — recorded sessions, files, preferences, keychain, cookies,
+  application info.
+
+### Home grid
+
+The panel home no longer uses a scroll view. A vertical stack pins a fixed 84 pt header,
+a stretchable 4-column grid and a 16 pt footer to the safe area. Rows use
+`FillEqually`, tiles carry no fixed height, and `FKTileView.layoutSubviews` derives the
+icon size from the tile bounds (`min(width-16, height-26-12, 46)`), so all 13 tiles fit
+any height without overlap or scrolling. The last row is padded with clear placeholder
+views to keep equal widths.

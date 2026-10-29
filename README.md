@@ -265,6 +265,25 @@ their metadata. Transfers cap a single file at 3 MB and the whole response at 4 
 
 ---
 
+## Explorer (native FLEX UI)
+
+Panel → **Explorer** (or the first tile) opens a FLEX-style browser built entirely on
+the native runtime kit:
+
+| Screen | Contents |
+|---|---|
+| View hierarchy | Drill down the live window tree; each row shows class + frame + hidden state, with **Highlight** (red outline via the overlay window) and **Inspect** (ivar dump). |
+| Classes | Every Objective-C class with search; class detail lists instance/class methods, ivars and properties, a method viewer with copy-selector, and **Instances** (heap scan → object browser). |
+| Object browser | Class chain, size, description, every ivar; object-valued ivars drill down, primitives can be edited. |
+| Libraries | Loaded Mach-O images with base/size; per-module exported symbols with live filtering. |
+| Network traffic | Captured `NSURLSession` records with status, timing, headers and body preview. |
+| Data | Files, Preferences, Keychain, Cookies, Application info. |
+
+The panel home is a fixed **4-column auto-fit grid**: tiles size themselves from the
+available height and width, rows share space equally, and the page never scrolls. Empty
+slots in the last row are inert placeholders so tiles keep their size and never overlap.
+On a 568 pt screen the grid still fits header + 4 rows + footer without clipping.
+
 ## Native runtime toolkit (FLEX + Frida replacement)
 
 FLEX's explorer and the Frida gadget's memory/hook tooling are implemented **inside
@@ -375,6 +394,7 @@ Sources/
   FKShellScreens.m    terminal UI
   FKRuntimeKit.h/.m   heap scan, object/ivar inspection, invocation, memory, hooks, traffic
   FKRuntimeTools.m    17 runtime MCP tools
+  FKExplorerScreens.m FLEX-style explorer (hierarchy, classes, heap, libraries, traffic)
   FKUtilities.h/.m    WebKit inspector, native utilities status
   FKUtilityScreens.m  Utilities screen
   FKToolsPrivate.h    shared internal declarations
