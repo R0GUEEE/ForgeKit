@@ -507,6 +507,12 @@ static NSArray<NSDictionary *> *FKScanStaticFieldsForClass(Il2CppClass *target, 
 }
 
 + (NSDictionary *)findObjectsOfClass:(NSString *)className limit:(NSInteger)limit {
+    if (![NSThread isMainThread]) {
+        // Unity object APIs must run on the engine's main thread.
+        __block NSDictionary *result = nil;
+        FKRunOnMain(^{ result = [self findObjectsOfClass:className limit:limit]; });
+        return result ?: @{ @"ok": @NO, @"error": @"main-thread dispatch failed" };
+    }
     if (!FKIL2CPPResolve()) return @{ @"ok": @NO, @"error": gLoadError ?: @"IL2CPP unavailable" };
     Il2CppClass *klass = FKClassByName(className);
     if (!klass) return @{ @"ok": @NO, @"error": [NSString stringWithFormat:@"class not found: %@", className] };
@@ -682,6 +688,13 @@ static MethodInfo *FKFindMethod(Il2CppClass *klass, NSString *methodName, NSInte
 
 + (NSDictionary *)invokeMethod:(NSString *)methodName ofClass:(NSString *)className
                         object:(unsigned long long)pointer args:(NSArray *)args overload:(NSInteger)overload {
+    if (![NSThread isMainThread]) {
+        __block NSDictionary *result = nil;
+        FKRunOnMain(^{
+            result = [self invokeMethod:methodName ofClass:className object:pointer args:args overload:overload];
+        });
+        return result ?: @{ @"ok": @NO, @"error": @"main-thread dispatch failed" };
+    }
     if (!FKIL2CPPResolve()) return @{ @"ok": @NO, @"error": gLoadError ?: @"IL2CPP unavailable" };
     Il2CppClass *klass = FKClassByName(className);
     if (!klass) return @{ @"ok": @NO, @"error": @"class not found" };
