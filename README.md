@@ -248,7 +248,7 @@ curl -s http://192.168.1.42:8787/mcp \
        "params":{"name":"devkit_selftest","arguments":{}}}'
 ```
 
-### Tools (106)
+### Tools (110)
 
 **Filesystem** — `fs_roots`, `fs_list`, `fs_stat`, `fs_read`, `fs_write`,
 `fs_mkdir`, `fs_delete`, `fs_move`, `fs_copy`, `fs_search`, `fs_chmod`,
@@ -281,6 +281,8 @@ curl -s http://192.168.1.42:8787/mcp \
 **Shell (4)** — `shell`, `shell_help`, `shell_status`, `shell_server`
 
 **Utilities (2)** — `utilities_status`, `web_inspector`
+
+**Agent (4)** — `agent_ask`, `agent_config`, `devkit_build`, `devkit_projects`
 
 **Runtime (17)** — `objc_heap`, `objc_object`, `objc_call`, `objc_ivar_get`,
 `objc_ivar_set`, `view_highlight`, `mem_modules`, `mem_read`, `mem_write`,
@@ -415,6 +417,49 @@ plan. Two items live in the host app, not the dylib: `NSLocalNetworkUsageDescrip
 Info.plist and the required-reason entries from `Resources/PrivacyInfo.xcprivacy` merged into
 the app's privacy manifest.
 
+## Agent
+
+A chat agent lives in the panel (**Agent** tile) and speaks any OpenAI-compatible
+chat-completions endpoint. It is a real tool loop: the model receives ForgeKit's tool
+definitions, calls them, receives JSON results, and iterates until it can answer.
+
+```
+Panel → Agent → ⚙︎   endpoint · model · API key (keychain) · allow mutations · max steps
+Panel → Agent → ✎   new conversation
+```
+
+* **Read-only by default.** Writes, patches, hooks, shell and memory writes are refused
+  until *Allow mutations* is enabled; the model is told they are disabled so it explains
+  instead of retrying.
+* **API key** is stored in the keychain (`com.r0guee.forgekit.agent`), never in defaults.
+* **Presets** seed three workflows: inspect the app, build a tweak, patch a value.
+
+### Building tweaks
+
+`devkit_build` writes a complete Theos project under
+`Documents/ForgeKit/projects/<Name>/`: `Sources/<Name>.m`, `Makefile`, `control` and a
+filter plist. It returns the paths so the project can be exported and built on a Mac.
+
+When a Theos install is reachable from the process (jailbroken device with a toolchain,
+path from `theosPath`, default `/opt/theos`) and `compile` is set, it also runs
+
+```
+THEOS=<path> make TARGET=iphone:clang:16.5:14.0 ARCHS=arm64 DEBUG=0 OPTFLAG=-O0
+```
+
+and reports the resulting dylib. In a jailed sandbox `posix_spawn` is denied; the tool
+returns the project plus the exact command to run, rather than pretending it compiled.
+
+### Remote use
+
+```jsonc
+{"name":"agent_ask","arguments":{"prompt":"Patch the coin value in this game and verify it"}}
+{"name":"agent_config","arguments":{"endpoint":"https://api.openai.com/v1/chat/completions",
+                                    "model":"gpt-4o-mini","api_key":"sk-…",
+                                    "allow_mutations":true}}
+{"name":"devkit_build","arguments":{"name":"NoAds","source":"…","filter":"com.example.app","compile":true}}
+```
+
 ## Native runtime toolkit (FLEX + Frida replacement)
 
 FLEX's explorer and the Frida gadget's memory/hook tooling are implemented **inside
@@ -527,6 +572,9 @@ Sources/
   FKRuntimeTools.m    17 runtime MCP tools
   FKExplorerScreens.m FLEX menu: hierarchy, heap, classes, libraries, network,
                       globals, notifications, web views, SQLite, system
+  FKAgent.h/.m        OpenAI-compatible tool loop, keychain, mutation gate
+  FKAgentTools.m      agent_ask / agent_config / devkit_build / devkit_projects
+  FKAgentScreens.m    chat and agent settings
   FKUtilities.h/.m    WebKit inspector, native utilities status
   FKUtilityScreens.m  Utilities screen
   FKToolsPrivate.h    shared internal declarations

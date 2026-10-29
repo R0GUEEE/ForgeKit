@@ -3,6 +3,7 @@
 //
 
 #import "ForgeKit.h"
+#import "FKAgent.h"
 #import "FKUtilities.h"
 
 @interface FKUnityTools : NSObject

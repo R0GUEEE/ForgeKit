@@ -170,15 +170,17 @@ shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)other 
 
 + (void)installWebInspectorSwizzle {
     if (gWebInspectorInstalled) return;
-    Class webViewClass = NSClassFromString(@"WKWebView");
+    Class webViewClass = FKWebViewClass();
     if (!webViewClass) {
         FKLog(@"webinspector: WKWebView not present yet");
         return;
     }
-    FKSwizzleInstance(webViewClass, @selector(loadRequest:), @selector(fk_loadRequest:));
-    FKSwizzleInstance(webViewClass, @selector(loadHTMLString:baseURL:), @selector(fk_loadHTMLString:baseURL:));
-    FKSwizzleInstance(webViewClass, @selector(loadFileURL:allowingReadAccessToURL:),
-                      @selector(fk_loadFileURL:allowingReadAccessToURL:));
+    FKSwizzleWKWebViewMethod(webViewClass, @selector(loadRequest:),
+                             NSSelectorFromString(@"fk_loadRequest:"), (IMP)FKWebViewLoadRequest);
+    FKSwizzleWKWebViewMethod(webViewClass, @selector(loadHTMLString:baseURL:),
+                             NSSelectorFromString(@"fk_loadHTMLString:baseURL:"), (IMP)FKWebViewLoadHTML);
+    FKSwizzleWKWebViewMethod(webViewClass, @selector(loadFileURL:allowingReadAccessToURL:),
+                             NSSelectorFromString(@"fk_loadFileURL:allowingReadAccessToURL:"), (IMP)FKWebViewLoadFile);
     gWebInspectorInstalled = YES;
     FKLog(@"webinspector: WKWebView load swizzles installed");
 }

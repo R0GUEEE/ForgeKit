@@ -40,3 +40,8 @@
 
 @interface FKFlexViewController : UIViewController
 @end
+
+@interface FKAgentSettingsViewController : FKListViewController
+@end
+@interface FKAgentChatViewController : UIViewController
+@end
