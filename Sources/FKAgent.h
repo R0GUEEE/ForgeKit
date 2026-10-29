@@ -14,10 +14,24 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy) NSString *model;
 @property (nonatomic, assign) BOOL allowMutations;
 @property (nonatomic, assign) NSInteger maxSteps;
+@property (nonatomic, assign) double temperature;
+@property (nonatomic, assign) NSInteger maxTokens;
+@property (nonatomic, copy) NSString *toolMode;          // auto | none | required
+@property (nonatomic, copy) NSString *toolProfile;       // all | safe | custom
+@property (nonatomic, copy) NSArray<NSString *> *enabledTools;
+@property (nonatomic, copy) NSDictionary<NSString *, NSString *> *extraHeaders;
+@property (nonatomic, copy) NSString *systemInstructions;
+@property (nonatomic, assign) NSInteger maxToolResultChars;
+@property (nonatomic, assign) NSInteger contextMessages;
+@property (nonatomic, assign) NSTimeInterval requestTimeout;
+@property (nonatomic, readonly) NSDictionary *lastUsage;
 
 + (NSString *)apiKey;
 + (void)setAPIKey:(nullable NSString *)key;
 
++ (BOOL)toolMutates:(NSString *)name;
+- (NSArray<NSDictionary *> *)availableTools;
+- (void)stop;
 - (void)resetConversation;
 - (NSArray<NSDictionary *> *)transcript;
 - (void)runPrompt:(NSString *)prompt

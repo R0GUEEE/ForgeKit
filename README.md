@@ -248,7 +248,7 @@ curl -s http://192.168.1.42:8787/mcp \
        "params":{"name":"devkit_selftest","arguments":{}}}'
 ```
 
-### Tools (110)
+### Tools (114)
 
 **Filesystem** — `fs_roots`, `fs_list`, `fs_stat`, `fs_read`, `fs_write`,
 `fs_mkdir`, `fs_delete`, `fs_move`, `fs_copy`, `fs_search`, `fs_chmod`,
@@ -282,7 +282,8 @@ curl -s http://192.168.1.42:8787/mcp \
 
 **Utilities (2)** — `utilities_status`, `web_inspector`
 
-**Agent (4)** — `agent_ask`, `agent_config`, `devkit_build`, `devkit_projects`
+**Agent (8)** — `agent_ask`, `agent_config`, `agent_tools`, `agent_stop`,
+`agent_transcript`, `devkit_build`, `devkit_projects`, `devkit_project`
 
 **Runtime (17)** — `objc_heap`, `objc_object`, `objc_call`, `objc_ivar_get`,
 `objc_ivar_set`, `view_highlight`, `mem_modules`, `mem_read`, `mem_write`,
@@ -454,6 +455,13 @@ THEOS=<path> make TARGET=iphone:clang:16.5:14.0 ARCHS=arm64 DEBUG=0 OPTFLAG=-O0
 
 and reports the resulting dylib. In a jailed sandbox `posix_spawn` is denied; the tool
 returns the project plus the exact command to run, rather than pretending it compiled.
+
+`devkit_build` also accepts a `files` object for multi-file projects, and `devkit_project`
+edits a scaffolded project afterwards (`list`, `read`, `write`, `delete`) so the agent can
+iterate on generated code without re-scaffolding. `agent_tools` lists every tool with its
+read-only/mutating group and whether the current profile enables it; `agent_transcript`
+exports the conversation; `agent_stop` cancels a running request (the chat shows a stop
+button while it runs).
 
 ### Remote use
 

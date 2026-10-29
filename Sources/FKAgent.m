@@ -52,6 +52,8 @@ static BOOL FKAgentToolMutates(NSString *name) {
 @implementation FKAgent {
     NSMutableArray<NSDictionary *> *_history;
     BOOL _toolsDisabled;
+    NSURLSessionDataTask *_currentTask;
+    NSDictionary *_lastUsage;
     NSLock *_runLock;
     NSMutableArray<NSDictionary *> *_activity;
 }
@@ -69,7 +71,21 @@ static BOOL FKAgentToolMutates(NSString *name) {
         _history = [NSMutableArray array];
         _activity = [NSMutableArray array];
         _runLock = [[NSLock alloc] init];
-        _maxSteps = 8;
+        _maxSteps = MAX(1, MIN([FKPrefs integerForKey:@"agentMaxSteps" defaultValue:8], 24));
+        _temperature = [FKPrefs doubleForKey:@"agentTemperature" defaultValue:0.2];
+        _maxTokens = [FKPrefs integerForKey:@"agentMaxTokens" defaultValue:0];
+        _toolMode = [FKPrefs stringForKey:@"agentToolMode" defaultValue:@"auto"];
+        _toolProfile = [FKPrefs stringForKey:@"agentToolProfile" defaultValue:@"all"];
+        _systemInstructions = [FKPrefs stringForKey:@"agentSystemInstructions" defaultValue:@""];
+        _maxToolResultChars = MAX(1000, [FKPrefs integerForKey:@"agentMaxResultChars" defaultValue:24000]);
+        _contextMessages = MAX(2, [FKPrefs integerForKey:@"agentContextMessages" defaultValue:24]);
+        _requestTimeout = MAX(10, [FKPrefs doubleForKey:@"agentTimeout" defaultValue:90]);
+        NSString *headersJSON = [FKPrefs stringForKey:@"agentExtraHeaders" defaultValue:@""];
+        NSDictionary *headers = headersJSON.length ? FKAgentJSONValue([headersJSON dataUsingEncoding:NSUTF8StringEncoding]) : nil;
+        _extraHeaders = [headers isKindOfClass:[NSDictionary class]] ? headers : @{};
+        NSString *toolsJSON = [FKPrefs stringForKey:@"agentEnabledTools" defaultValue:@""];
+        NSArray *tools = toolsJSON.length ? FKAgentJSONValue([toolsJSON dataUsingEncoding:NSUTF8StringEncoding]) : nil;
+        _enabledTools = [tools isKindOfClass:[NSArray class]] ? tools : @[];
         _endpoint = FKAgentNormalizedEndpoint([FKPrefs stringForKey:@"agentEndpoint"
                                                             defaultValue:@"https://api.openai.com/v1/chat/completions"]);
         _model = [FKPrefs stringForKey:@"agentModel" defaultValue:@"gpt-4o-mini"];
@@ -133,6 +149,100 @@ static BOOL FKAgentToolMutates(NSString *name) {
     [FKPrefs setBool:allowMutations forKey:@"agentAllowMutations"];
 }
 
+- (void)setMaxSteps:(NSInteger)maxSteps {
+    _maxSteps = MAX(1, MIN(maxSteps, 24));
+    [FKPrefs setInteger:_maxSteps forKey:@"agentMaxSteps"];
+}
+
+- (void)setTemperature:(double)temperature {
+    _temperature = MAX(0, MIN(temperature, 2));
+    [FKPrefs setDouble:_temperature forKey:@"agentTemperature"];
+}
+
+- (void)setMaxTokens:(NSInteger)maxTokens {
+    _maxTokens = MAX(0, MIN(maxTokens, 32768));
+    [FKPrefs setInteger:_maxTokens forKey:@"agentMaxTokens"];
+}
+
+- (void)setToolMode:(NSString *)toolMode {
+    NSArray *allowed = @[@"auto", @"none", @"required"];
+    _toolMode = [allowed containsObject:toolMode.lowercaseString] ? toolMode.lowercaseString : @"auto";
+    [FKPrefs setString:_toolMode forKey:@"agentToolMode"];
+}
+
+- (void)setToolProfile:(NSString *)toolProfile {
+    NSArray *allowed = @[@"all", @"safe", @"custom"];
+    _toolProfile = [allowed containsObject:toolProfile.lowercaseString] ? toolProfile.lowercaseString : @"all";
+    [FKPrefs setString:_toolProfile forKey:@"agentToolProfile"];
+}
+
+- (void)setEnabledTools:(NSArray<NSString *> *)enabledTools {
+    _enabledTools = [enabledTools copy] ?: @[];
+    NSData *data = [NSJSONSerialization dataWithJSONObject:_enabledTools options:0 error:nil];
+    [FKPrefs setString:data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : @""
+                forKey:@"agentEnabledTools"];
+}
+
+- (void)setExtraHeaders:(NSDictionary<NSString *,NSString *> *)extraHeaders {
+    _extraHeaders = [extraHeaders copy] ?: @{};
+    NSData *data = [NSJSONSerialization dataWithJSONObject:_extraHeaders options:0 error:nil];
+    [FKPrefs setString:data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : @""
+                forKey:@"agentExtraHeaders"];
+}
+
+- (void)setSystemInstructions:(NSString *)systemInstructions {
+    _systemInstructions = [systemInstructions copy] ?: @"";
+    [FKPrefs setString:_systemInstructions forKey:@"agentSystemInstructions"];
+}
+
+- (void)setMaxToolResultChars:(NSInteger)maxToolResultChars {
+    _maxToolResultChars = MAX(1000, MIN(maxToolResultChars, 200000));
+    [FKPrefs setInteger:_maxToolResultChars forKey:@"agentMaxResultChars"];
+}
+
+- (void)setContextMessages:(NSInteger)contextMessages {
+    _contextMessages = MAX(2, MIN(contextMessages, 200));
+    [FKPrefs setInteger:_contextMessages forKey:@"agentContextMessages"];
+}
+
+- (void)setRequestTimeout:(NSTimeInterval)requestTimeout {
+    _requestTimeout = MAX(10, MIN(requestTimeout, 600));
+    [FKPrefs setDouble:_requestTimeout forKey:@"agentTimeout"];
+}
+
+- (NSDictionary *)lastUsage { return _lastUsage ?: @{}; }
+
+- (void)stop {
+    [_runLock lock];
+    NSURLSessionDataTask *task = _currentTask;
+    _currentTask = nil;
+    [_runLock unlock];
+    [task cancel];
+}
+
++ (BOOL)toolMutates:(NSString *)name { return FKAgentToolMutates(name); }
+
+- (BOOL)toolAllowed:(NSString *)name {
+    if (self.toolProfile.lowercaseString == nil) return YES;
+    NSString *profile = self.toolProfile.lowercaseString;
+    if ([profile isEqualToString:@"safe"] && FKAgentToolMutates(name)) return NO;
+    if ([profile isEqualToString:@"custom"]) return [self.enabledTools containsObject:name];
+    return YES;
+}
+
+- (NSArray<NSDictionary *> *)availableTools {
+    NSMutableArray *tools = [NSMutableArray array];
+    for (NSDictionary *definition in [FKTools toolDefinitions]) {
+        NSString *name = definition[@"name"];
+        if (!name.length) continue;
+        [tools addObject:@{ @"name": name,
+                            @"group": FKAgentToolMutates(name) ? @"mutating" : @"read-only",
+                            @"enabled": @([self toolAllowed:name]),
+                            @"description": definition[@"description"] ?: @"" }];
+    }
+    return tools;
+}
+
 #pragma mark - Conversation
 
 - (void)resetConversation {
@@ -168,6 +278,13 @@ static BOOL FKAgentToolMutates(NSString *name) {
             self.allowMutations ? @"enabled" : @"disabled (read-only mode)"];
 }
 
+- (NSString *)systemPromptWithInstructions {
+    NSString *base = [self systemPrompt];
+    if (self.systemInstructions.length)
+        base = [base stringByAppendingFormat:@"\n\nOperator instructions:\n%@", self.systemInstructions];
+    return base;
+}
+
 #pragma mark - HTTP
 
 - (NSArray<NSDictionary *> *)toolDefinitionsForAPI {
@@ -183,6 +300,7 @@ static BOOL FKAgentToolMutates(NSString *name) {
     for (NSDictionary *definition in [FKTools toolDefinitions]) {
         NSString *name = definition[@"name"];
         if (!name.length || [excluded containsObject:name]) continue;
+        if (![self toolAllowed:name]) continue;
         [tools addObject:@{
             @"type": @"function",
             @"function": @{ @"name": name,
@@ -197,12 +315,13 @@ static BOOL FKAgentToolMutates(NSString *name) {
     NSMutableDictionary *payload = [@{
         @"model": self.model ?: @"gpt-4o-mini",
         @"messages": messages,
-        @"temperature": @0.2,
+        @"temperature": @(self.temperature),
         @"stream": @NO,
     } mutableCopy];
-    if (tools.count && !_toolsDisabled) {
+    if (self.maxTokens > 0) payload[@"max_tokens"] = @(self.maxTokens);
+    if (tools.count && !_toolsDisabled && ![self.toolMode isEqualToString:@"none"]) {
         payload[@"tools"] = tools;
-        payload[@"tool_choice"] = @"auto";
+        payload[@"tool_choice"] = [self.toolMode isEqualToString:@"required"] ? @"required" : @"auto";
     }
     NSError *error = nil;
     NSData *body = [NSJSONSerialization dataWithJSONObject:payload options:0 error:&error];
@@ -211,12 +330,16 @@ static BOOL FKAgentToolMutates(NSString *name) {
     if (!url) return nil;
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     request.HTTPMethod = @"POST";
-    request.timeoutInterval = 90;
+    request.timeoutInterval = self.requestTimeout;
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     [request setValue:@"application/json" forHTTPHeaderField:@"Accept"];
     [request setValue:@"ForgeKit/2.3.1" forHTTPHeaderField:@"User-Agent"];
     NSString *key = [[FKAgent apiKey] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     [request setValue:[NSString stringWithFormat:@"Bearer %@", key] forHTTPHeaderField:@"Authorization"];
+    for (NSString *header in self.extraHeaders) {
+        if ([header isKindOfClass:[NSString class]] && [self.extraHeaders[header] isKindOfClass:[NSString class]])
+            [request setValue:self.extraHeaders[header] forHTTPHeaderField:header];
+    }
     request.HTTPBody = body;
     return request;
 }
@@ -236,10 +359,13 @@ static BOOL FKAgentToolMutates(NSString *name) {
     }
 
     NSMutableArray *messages = [NSMutableArray array];
-    [messages addObject:@{ @"role": @"system", @"content": [self systemPrompt] }];
+    [messages addObject:@{ @"role": @"system", @"content": [self systemPromptWithInstructions] }];
     [_runLock lock];
-    [messages addObjectsFromArray:_history];
+    NSMutableArray *history = [_history mutableCopy];
     [_runLock unlock];
+    while ((NSInteger)history.count > MAX(2, self.contextMessages)) [history removeObjectAtIndex:0];
+    while (history.count && [history.firstObject[@"role"] isEqualToString:@"tool"]) [history removeObjectAtIndex:0];
+    [messages addObjectsFromArray:history];
 
     NSURLRequest *request = [self requestForMessages:messages tools:[self toolDefinitionsForAPI]];
     if (!request) {
@@ -247,10 +373,19 @@ static BOOL FKAgentToolMutates(NSString *name) {
                                                    userInfo:@{ NSLocalizedDescriptionKey: @"invalid endpoint" }]);
         return;
     }
-    NSURLSessionDataTask *task =
-        [[NSURLSession sharedSession] dataTaskWithRequest:request
+    __block NSURLSessionDataTask *task = nil;
+    task = [[NSURLSession sharedSession] dataTaskWithRequest:request
                                         completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        if (error) { completion(nil, self->_activity, error); return; }
+        [self->_runLock lock];
+        if (self->_currentTask == task) self->_currentTask = nil;
+        [self->_runLock unlock];
+        if (error) {
+            if (error.code == NSURLErrorCancelled)
+                error = [NSError errorWithDomain:@"ForgeKit.Agent" code:error.code
+                                        userInfo:@{ NSLocalizedDescriptionKey: @"stopped" }];
+            completion(nil, self->_activity, error);
+            return;
+        }
         NSInteger status = [response isKindOfClass:[NSHTTPURLResponse class]] ? [(NSHTTPURLResponse *)response statusCode] : 0;
         NSString *host = response.URL.host ?: @"?";
         FKLog(@"agent: POST %@ -> HTTP %ld, %lu bytes", response.URL.path ?: @"/", (long)status,
@@ -293,6 +428,7 @@ static BOOL FKAgentToolMutates(NSString *name) {
                                                            userInfo:@{ NSLocalizedDescriptionKey: message }]);
             return;
         }
+        if ([json[@"usage"] isKindOfClass:[NSDictionary class]]) self->_lastUsage = json[@"usage"];
         NSDictionary *choice = [json[@"choices"] firstObject];
         NSDictionary *message = choice[@"message"];
         if (![message isKindOfClass:[NSDictionary class]]) {
@@ -315,7 +451,8 @@ static BOOL FKAgentToolMutates(NSString *name) {
                 NSDictionary *args = FKAgentJSONValue([arguments dataUsingEncoding:NSUTF8StringEncoding]) ?: @{};
                 NSDictionary *result = [self executeTool:name arguments:args];
                 NSString *encoded = FKJSONString(result, YES);
-                if (encoded.length > 24000) encoded = [[encoded substringToIndex:24000] stringByAppendingString:@"…"];
+                if ((NSInteger)encoded.length > self.maxToolResultChars)
+                    encoded = [[encoded substringToIndex:(NSUInteger)self.maxToolResultChars] stringByAppendingString:@"…"];
                 [self->_runLock lock];
                 [self->_history addObject:@{ @"role": @"tool",
                                              @"tool_call_id": call[@"id"] ?: @"",
@@ -331,10 +468,21 @@ static BOOL FKAgentToolMutates(NSString *name) {
         [self->_runLock unlock];
         completion(content, self->_activity, nil);
     }];
+    [_runLock lock];
+    _currentTask = task;
+    [_runLock unlock];
     [task resume];
 }
 
 - (NSDictionary *)executeTool:(NSString *)name arguments:(NSDictionary *)arguments {
+    if (![self toolAllowed:name]) {
+        NSDictionary *blocked = @{ @"ok": @NO,
+                                   @"error": [NSString stringWithFormat:
+                                              @"tool %@ is excluded by the current tool profile (%@)",
+                                              name, self.toolProfile] };
+        [self recordActivity:name arguments:arguments result:blocked];
+        return blocked;
+    }
     if (FKAgentToolMutates(name) && !self.allowMutations) {
         NSDictionary *blocked = @{ @"ok": @NO,
                                    @"error": @"mutating tools are disabled; enable 'Allow mutations' in Agent settings" };
@@ -375,6 +523,7 @@ static BOOL FKAgentToolMutates(NSString *name) {
         return;
     }
     _toolsDisabled = NO;
+    _lastUsage = @{};
     [_history addObject:@{ @"role": @"user", @"content": prompt }];
     [_activity removeAllObjects];
     [_runLock unlock];

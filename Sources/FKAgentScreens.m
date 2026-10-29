@@ -13,6 +13,8 @@
 @property (nonatomic, strong) UITextView *transcriptView;
 @property (nonatomic, strong) UITextField *inputField;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
+@property (nonatomic, strong) UIButton *sendButton;
+@property (nonatomic, strong) UIButton *stopButton;
 @property (nonatomic, strong) NSLayoutConstraint *bottomConstraint;
 @property (nonatomic, assign) BOOL running;
 @end
@@ -69,12 +71,20 @@
     self.inputField.translatesAutoresizingMaskIntoConstraints = NO;
     [bar addSubview:self.inputField];
 
-    UIButton *send = [UIButton buttonWithType:UIButtonTypeSystem];
-    [send setImage:[UIImage systemImageNamed:@"arrow.up.circle.fill"] forState:UIControlStateNormal];
-    send.tintColor = [UIColor systemBlueColor];
-    [send addTarget:self action:@selector(send) forControlEvents:UIControlEventTouchUpInside];
-    send.translatesAutoresizingMaskIntoConstraints = NO;
-    [bar addSubview:send];
+    self.sendButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.sendButton setImage:[UIImage systemImageNamed:@"arrow.up.circle.fill"] forState:UIControlStateNormal];
+    self.sendButton.tintColor = [UIColor systemBlueColor];
+    [self.sendButton addTarget:self action:@selector(send) forControlEvents:UIControlEventTouchUpInside];
+    self.sendButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [bar addSubview:self.sendButton];
+
+    self.stopButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.stopButton setImage:[UIImage systemImageNamed:@"stop.circle.fill"] forState:UIControlStateNormal];
+    self.stopButton.tintColor = [UIColor systemRedColor];
+    self.stopButton.hidden = YES;
+    [self.stopButton addTarget:self action:@selector(stop) forControlEvents:UIControlEventTouchUpInside];
+    self.stopButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [bar addSubview:self.stopButton];
 
     self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     self.spinner.hidesWhenStopped = YES;
@@ -100,11 +110,16 @@
 
         [self.inputField.leadingAnchor constraintEqualToAnchor:bar.leadingAnchor constant:12],
         [self.inputField.centerYAnchor constraintEqualToAnchor:bar.centerYAnchor],
-        [send.leadingAnchor constraintEqualToAnchor:self.inputField.trailingAnchor constant:8],
-        [send.trailingAnchor constraintEqualToAnchor:bar.trailingAnchor constant:-10],
-        [send.centerYAnchor constraintEqualToAnchor:bar.centerYAnchor],
-        [send.widthAnchor constraintEqualToConstant:30],
-        [send.heightAnchor constraintEqualToConstant:30],
+        [self.sendButton.leadingAnchor constraintEqualToAnchor:self.inputField.trailingAnchor constant:8],
+        [self.sendButton.trailingAnchor constraintEqualToAnchor:bar.trailingAnchor constant:-10],
+        [self.sendButton.centerYAnchor constraintEqualToAnchor:bar.centerYAnchor],
+        [self.sendButton.widthAnchor constraintEqualToConstant:30],
+        [self.sendButton.heightAnchor constraintEqualToConstant:30],
+
+        [self.stopButton.centerXAnchor constraintEqualToAnchor:self.sendButton.centerXAnchor],
+        [self.stopButton.centerYAnchor constraintEqualToAnchor:self.sendButton.centerYAnchor],
+        [self.stopButton.widthAnchor constraintEqualToConstant:30],
+        [self.stopButton.heightAnchor constraintEqualToConstant:30],
 
         [self.spinner.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [self.spinner.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
@@ -159,6 +174,8 @@
     if (!prompt.length || self.running) return;
     self.inputField.text = @"";
     self.running = YES;
+    self.sendButton.hidden = YES;
+    self.stopButton.hidden = NO;
     [self.spinner startAnimating];
     [self append:[NSString stringWithFormat:@"you: %@", prompt] system:NO];
 
@@ -168,6 +185,8 @@
             __strong typeof(weakSelf) self = weakSelf;
             if (!self) return;
             self.running = NO;
+            self.sendButton.hidden = NO;
+            self.stopButton.hidden = YES;
             [self.spinner stopAnimating];
             for (NSDictionary *entry in activity) {
                 NSString *tool = entry[@"tool"] ?: @"?";
@@ -178,9 +197,20 @@
                 [self append:[NSString stringWithFormat:@"error: %@", error.localizedDescription] system:YES];
             } else {
                 [self append:[NSString stringWithFormat:@"agent: %@", answer ?: @""] system:NO];
+                NSDictionary *usage = [FKAgent sharedAgent].lastUsage;
+                if ([usage[@"total_tokens"] respondsToSelector:@selector(integerValue)]) {
+                    [self append:[NSString stringWithFormat:@"· %@ prompt + %@ completion = %@ tokens",
+                                  usage[@"prompt_tokens"] ?: @0, usage[@"completion_tokens"] ?: @0,
+                                  usage[@"total_tokens"]] system:YES];
+                }
             }
         });
     }];
+}
+
+- (void)stop {
+    [[FKAgent sharedAgent] stop];
+    [self append:@"· stop requested" system:YES];
 }
 
 - (BOOL)textFieldShouldReturn:(UITextField *)textField { [self send]; return YES; }
@@ -239,6 +269,23 @@
     [self presentViewController:alert animated:YES completion:nil];
 }
 
+- (void)chooseFrom:(NSArray<NSString *> *)options title:(NSString *)title
+           current:(NSString *)current handler:(void (^)(NSString *))handler {
+    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:title message:nil
+                                                            preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSString *option in options) {
+        NSString *label = [option isEqualToString:current] ? [NSString stringWithFormat:@"✓ %@", option] : option;
+        [sheet addAction:[UIAlertAction actionWithTitle:label style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            handler(option);
+            [self rebuild];
+        }]];
+    }
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    sheet.popoverPresentationController.sourceView = self.view;
+    sheet.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds), 1, 1);
+    [self presentViewController:sheet animated:YES completion:nil];
+}
+
 - (void)rebuild {
     __weak typeof(self) weakSelf = self;
     FKAgent *agent = [FKAgent sharedAgent];
@@ -259,6 +306,85 @@
                @"action": ^{ [weakSelf promptFor:@"API key" value:@"" secure:YES handler:^(NSString *value) {
                    [FKAgent setAPIKey:value];
                }]; } },
+        ] },
+        @{ @"title": @"Sampling", @"rows": @[
+            @{ @"title": @"Temperature", @"subtitle": [NSString stringWithFormat:@"%.2f", agent.temperature], @"chevron": @YES,
+               @"action": ^{ [weakSelf promptFor:@"Temperature (0-2)"
+                                           value:[NSString stringWithFormat:@"%.2f", agent.temperature]
+                                          secure:NO handler:^(NSString *value) {
+                   double number = value.doubleValue;
+                   if (number >= 0 && number <= 2) agent.temperature = number;
+               }]; } },
+            @{ @"title": @"Max tokens", @"subtitle": agent.maxTokens ? [NSString stringWithFormat:@"%ld", (long)agent.maxTokens] : @"provider default",
+               @"chevron": @YES,
+               @"action": ^{ [weakSelf promptFor:@"Max tokens (0 = default)"
+                                           value:[NSString stringWithFormat:@"%ld", (long)agent.maxTokens]
+                                          secure:NO handler:^(NSString *value) {
+                   agent.maxTokens = value.integerValue;
+               }]; } },
+            @{ @"title": @"Request timeout", @"subtitle": [NSString stringWithFormat:@"%.0f s", agent.requestTimeout], @"chevron": @YES,
+               @"action": ^{ [weakSelf promptFor:@"Timeout (seconds)"
+                                           value:[NSString stringWithFormat:@"%.0f", agent.requestTimeout]
+                                          secure:NO handler:^(NSString *value) {
+                   agent.requestTimeout = value.doubleValue;
+               }]; } },
+        ] },
+        @{ @"title": @"Tools", @"rows": @[
+            @{ @"title": @"Tool profile", @"subtitle": agent.toolProfile ?: @"all", @"chevron": @YES,
+               @"action": ^{ [weakSelf chooseFrom:@[@"all", @"safe", @"custom"] title:@"Tool profile"
+                                          current:agent.toolProfile handler:^(NSString *value) {
+                   agent.toolProfile = value;
+               }]; } },
+            @{ @"title": @"Tool mode", @"subtitle": agent.toolMode ?: @"auto", @"chevron": @YES,
+               @"action": ^{ [weakSelf chooseFrom:@[@"auto", @"none", @"required"] title:@"Tool mode"
+                                          current:agent.toolMode handler:^(NSString *value) {
+                   agent.toolMode = value;
+               }]; } },
+            @{ @"title": @"Custom tool list",
+               @"subtitle": agent.enabledTools.count ? [agent.enabledTools componentsJoinedByString:@", "] : @"empty",
+               @"chevron": @YES,
+               @"action": ^{ [weakSelf promptFor:@"Tools, comma separated"
+                                           value:[agent.enabledTools componentsJoinedByString:@","]
+                                          secure:NO handler:^(NSString *value) {
+                   NSMutableArray *names = [NSMutableArray array];
+                   for (NSString *piece in [value componentsSeparatedByString:@","]) {
+                       NSString *trimmed = [piece stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                       if (trimmed.length) [names addObject:trimmed];
+                   }
+                   agent.enabledTools = names;
+               }]; } },
+            @{ @"title": @"Max tool result", @"subtitle": [NSString stringWithFormat:@"%ld chars", (long)agent.maxToolResultChars], @"chevron": @YES,
+               @"action": ^{ [weakSelf promptFor:@"Max tool result characters"
+                                           value:[NSString stringWithFormat:@"%ld", (long)agent.maxToolResultChars]
+                                          secure:NO handler:^(NSString *value) {
+                   agent.maxToolResultChars = value.integerValue;
+               }]; } },
+            @{ @"title": @"Context messages", @"subtitle": [NSString stringWithFormat:@"%ld", (long)agent.contextMessages], @"chevron": @YES,
+               @"action": ^{ [weakSelf promptFor:@"History messages per request"
+                                           value:[NSString stringWithFormat:@"%ld", (long)agent.contextMessages]
+                                          secure:NO handler:^(NSString *value) {
+                   agent.contextMessages = value.integerValue;
+               }]; } },
+        ] },
+        @{ @"title": @"Prompt", @"rows": @[
+            @{ @"title": @"Extra instructions",
+               @"subtitle": agent.systemInstructions.length ? agent.systemInstructions : @"none", @"chevron": @YES,
+               @"action": ^{ [weakSelf promptFor:@"Extra system instructions" value:agent.systemInstructions ?: @""
+                                          secure:NO handler:^(NSString *value) {
+                   agent.systemInstructions = value;
+               }]; } },
+            @{ @"title": @"Extra headers",
+               @"subtitle": agent.extraHeaders.count ? [NSString stringWithFormat:@"%lu header(s)", (unsigned long)agent.extraHeaders.count] : @"none",
+               @"chevron": @YES,
+               @"action": ^{
+                   NSData *data = [NSJSONSerialization dataWithJSONObject:agent.extraHeaders ?: @{} options:0 error:nil];
+                   NSString *json = data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : @"{}";
+                   [weakSelf promptFor:@"Headers JSON" value:json secure:NO handler:^(NSString *value) {
+                       NSData *input = [value dataUsingEncoding:NSUTF8StringEncoding];
+                       id object = input.length ? [NSJSONSerialization JSONObjectWithData:input options:0 error:nil] : nil;
+                       if ([object isKindOfClass:[NSDictionary class]]) agent.extraHeaders = object;
+                   }];
+               } },
         ] },
         @{ @"title": @"Execution", @"rows": @[
             @{ @"title": @"Allow mutations",
