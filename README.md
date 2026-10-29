@@ -9,7 +9,7 @@ MobileSubstrate, ElleKit or libhooker). Every method replacement goes through th
 Objective-C runtime, so the same binary also works on a jailbroken device.
 
 ```
-Three-finger tap anywhere in the app     →   panel opens
+Hold the left side of the status bar   →   panel opens
 http://<device-ip>:8787/mcp            →   MCP endpoint (bearer token)
 http://<device-ip>:8787/?token=<token> →   web dashboard
 ```
@@ -22,7 +22,7 @@ Built binary: `ForgeKit.dylib` — arm64 + arm64e, iOS 14.0+, 932,912 bytes.
 
 | Area | Capability |
 |---|---|
-| Hidden panel | **Three-finger tap anywhere** in the app. Opens a window above the app at `UIWindowLevelAlert + 100`; the recognizer never cancels or delays app touches. |
+| Hidden panel | Long-press the left third of the status bar (or the left screen edge when the bar is hidden). Opens a window above the app at `UIWindowLevelAlert + 100`. |
 | File browser | Container/root navigation, search, swipe rename/delete, context menus, text editor with save, hex viewer, image viewer, plist viewer/editor, zip create/extract, share sheet, chmod, POSIX attributes. |
 | App root management | Bundle, data container, Documents, Library, tmp, app-group containers, `/`, `/var`, `/var/mobile`, bundle/data container roots, optional `/var/jb`. Container enumeration across the device when the sandbox permits it. |
 | App introspection | Info.plist, entitlements from the code signature and embedded profile, URL schemes, Mach-O dependencies/rpaths for the app, Frameworks and PlugIns, loaded images, keychain items, HTTP cookies. |
@@ -102,11 +102,9 @@ Without it the server still binds and works from Safari on the device
 
 ## Using the panel
 
-* **Trigger** — tap with three fingers anywhere in the app. The recognizer is
-  installed on every app window with `cancelsTouchesInView = NO`, no touch delay,
-  and simultaneous recognition allowed, so app gestures keep working. A three-finger
-  tap inside the panel does not close it (the panel is its own window); use the
-  close button.
+* **Trigger** — hold the left side of the status bar for ~0.7 s. If the app hides
+  the status bar, hold the left screen edge (top 220 pt) instead. Both timings and
+  the edge fallback are configurable in Settings.
 * **Files** — starts in the app container. Toolbar: roots, go-to-path, hidden
   files, sort. Long-press a row for open / rename / duplicate / compress / share /
   info / delete. Text-like files open in an editor with Save; everything else
@@ -115,7 +113,7 @@ Without it the server still binds and works from Safari on the device
   token, scan the QR code, open the dashboard, inspect the request log.
 * **Runtime** — evaluate JavaScript with `fk.read`, `fk.write`, `fk.list`,
   `fk.stat`, `fk.info`, `fk.log`, `fk.sleep`.
-* **Settings** — activation summary, haptics, token requirement,
+* **Settings** — hold duration, haptics, edge fallback, token requirement,
   start-on-launch, port, token regeneration, log clearing.
 
 ---
@@ -203,7 +201,7 @@ Sources/
   FKUtil.m            paths, sandbox probes, entitlements, Mach-O deps, keychain,
                       cookies, formatting, swizzling, window helpers, preferences
   FKHooks.m           constructor, UIWindow swizzles, notification observers
-  FKPanel.m           panel lifecycle, three-finger tap gesture, home screen
+  FKPanel.m           panel lifecycle, status-bar gesture, home screen
   FKPanelScreens.h    internal screen declarations
   FKPanelScreens.m    defaults, keychain, settings, log
   FKServerScreens.m   network console, JavaScript console
@@ -221,10 +219,9 @@ Resources/dashboard.html  source of the dashboard (regenerate FKWebUI.m)
 ```
 
 Panel window is created lazily and never touches the app's view hierarchy.
-A `UITapGestureRecognizer` (3 touches, 1 tap) is added to every window at or
-below `UIWindowLevelAlert`, with `cancelsTouchesInView = NO`,
-`delaysTouchesBegan/Ended = NO`, and a delegate that allows simultaneous
-recognition, so the host app's own gestures and touch handling are untouched.
+Gesture recognizers are added to every window at or below `UIWindowLevelAlert`,
+including the app's status-bar window, with `cancelsTouchesInView = NO` and a
+delegate that only claims touches inside the trigger zone.
 
 ---
 

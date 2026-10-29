@@ -230,10 +230,15 @@
     NSMutableArray *sections = [NSMutableArray array];
 
     [sections addObject:@{ @"title": @"Trigger", @"rows": @[
-        @{ @"title": @"Activation", @"subtitle": @"Three-finger tap anywhere in the app" },
         @{ @"title": @"Haptic feedback", @"subtitle": @"Vibrate when the panel opens",
            @"toggle": ^(BOOL on) { save(@"haptics", on); },
            @"toggleValue": @([FKPrefs boolForKey:@"haptics" defaultValue:YES]) },
+        @{ @"title": @"Left-edge fallback", @"subtitle": @"Also open from the left screen edge when the status bar is hidden",
+           @"toggle": ^(BOOL on) { save(@"edgeFallback", on); },
+           @"toggleValue": @([FKPrefs boolForKey:@"edgeFallback" defaultValue:YES]) },
+        @{ @"title": @"Hold duration", @"subtitle": [NSString stringWithFormat:@"%.1f s", [FKPrefs doubleForKey:@"gestureDuration" defaultValue:0.7]],
+           @"chevron": @YES,
+           @"action": ^{ [weakSelf chooseDuration]; } },
     ] }];
 
     [sections addObject:@{ @"title": @"Server", @"rows": @[
@@ -271,6 +276,21 @@
 
     self.list.sections = sections;
     [self.list reloadSections];
+}
+
+- (void)chooseDuration {
+    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"Hold duration" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSNumber *value in @[@0.4, @0.7, @1.2]) {
+        NSString *title = [NSString stringWithFormat:@"%.1f s", value.doubleValue];
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+            [FKPrefs setDouble:value.doubleValue forKey:@"gestureDuration"];
+            [self rebuild];
+        }]];
+    }
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    sheet.popoverPresentationController.sourceView = self.view;
+    sheet.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds), 1, 1);
+    [self presentViewController:sheet animated:YES completion:nil];
 }
 
 - (void)choosePort {

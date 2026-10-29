@@ -370,7 +370,7 @@ static id FKCoerceValue(id value, NSString *type) {
         @"server": @{ @"running": @(server.isRunning), @"port": @(server.port),
                       @"url": [NSString stringWithFormat:@"http://%@:%u/mcp", FKLanAddress(), server.port],
                       @"token_masked": masked, @"requires_token": @([FKPrefs boolForKey:@"requireToken" defaultValue:YES]) },
-        @"panel": @{ @"visible": @([[FKPanel sharedPanel] isVisible]), @"gesture": @"three-finger tap" },
+        @"panel": @{ @"visible": @([[FKPanel sharedPanel] isVisible]), @"gesture": @"long-press status bar left" },
         @"tools": @([FKTools toolDefinitions].count),
         @"memory": FKHumanSize(FKResidentMemory()),
     });
