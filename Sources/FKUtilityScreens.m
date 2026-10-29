@@ -6,9 +6,6 @@
 #import "FKPanelScreens.h"
 #import "FKUtilities.h"
 
-@interface FKUtilitiesViewController : FKListViewController
-@end
-
 @implementation FKUtilitiesViewController
 
 - (void)viewDidLoad {
