@@ -11,7 +11,7 @@ on:
 jobs:
   dylib:
     name: Build ForgeKit.dylib
-    runs-on: macos-15
+    runs-on: macos-14
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
