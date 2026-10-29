@@ -116,9 +116,12 @@ Without it the server still binds and works from Safari on the device
   status-area rectangle is used instead (can be disabled in Settings). Hold
   duration, haptics and the fallback are configurable.
 * **Volume gesture** — press volume up, then volume down, within 1.2 s (0.8 / 1.2 / 2.0
-  selectable). Uses the ambient audio session, so it never interrupts playback. If the
-  trigger arms while volume is at 0 % or 100 % it nudges the level to the middle once,
-  because an already-maxed "up" press emits no change event.
+  selectable). Three sources feed one state machine: the AVSystemController notification,
+  KVO on `AVAudioSession.outputVolume`, and KVO on a hidden `MPVolumeView` slider. The
+  slider is the fallback that keeps working when iOS deactivates the audio session; the
+  session uses `Playback + MixWithOthers` so presses register even with the ring switch
+  silenced. It re-arms on foreground and collapses duplicate callbacks. At 0 % / 100 %
+  it nudges to 50 % once for headroom.
 * **Files** — starts in the app container. Toolbar: roots, go-to-path, hidden
   files, sort. Long-press a row for open / rename / duplicate / compress / share /
   info / delete. Text-like files open in an editor with Save; everything else

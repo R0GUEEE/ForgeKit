@@ -1,29 +1,40 @@
 //
 //  FKVolumeTrigger.m — activation by pressing volume up, then volume down
 //
-//  Volume events are observed through the system's AVSystemController change
-//  notification (string name, no private symbols) plus a KVO fallback on
-//  AVAudioSession.outputVolume. The audio session uses the ambient + mixable
-//  category, so starting the trigger never interrupts other audio.
+//  Three independent sources feed one state machine:
+//    1. AVSystemController volume-change notification (string name)
+//    2. KVO on AVAudioSession.outputVolume
+//    3. KVO on a hidden MPVolumeView's UISlider — this one keeps working when the
+//       audio session is deactivated by the system, which is the usual reason a
+//       notification-only listener goes dead.
+//
+//  The session uses Playback + MixWithOthers so hardware presses adjust media
+//  volume even with the ring switch silenced. No audio is played.
 //
 
 #import "ForgeKit.h"
 #import <AVFoundation/AVFoundation.h>
 #import <MediaPlayer/MediaPlayer.h>
+#import <math.h>
 
 static NSString * const FKVolumeDidChangeNotification = @"AVSystemController_SystemVolumeDidChangeNotification";
 static NSString * const FKVolumeReasonKey = @"AVSystemController_AudioVolumeChangeReasonNotificationParameter";
 static NSString * const FKVolumeValueKey = @"AVSystemController_AudioVolumeNotificationParameter";
-static void *FKVolumeKVOContext = &FKVolumeKVOContext;
+static void *FKVolumeSessionContext = &FKVolumeSessionContext;
+static void *FKVolumeSliderContext = &FKVolumeSliderContext;
 
 @interface FKVolumeTrigger ()
 @property (nonatomic, readwrite, getter=isRunning) BOOL running;
 @property (nonatomic, strong) AVAudioSession *session;
+@property (nonatomic, strong) MPVolumeView *volumeView;
+@property (nonatomic, weak) UISlider *volumeSlider;
 @property (nonatomic, assign) float lastVolume;
 @property (nonatomic, assign) double pendingUpTime;
 @property (nonatomic, assign) float pendingUpVolume;
+@property (nonatomic, assign) double lastEventTime;
 @property (nonatomic, assign) double lastFireTime;
 @property (nonatomic, assign) double suppressUntil;
+@property (nonatomic, assign) NSInteger eventCount;
 @end
 
 @implementation FKVolumeTrigger
@@ -39,70 +50,168 @@ static void *FKVolumeKVOContext = &FKVolumeKVOContext;
     if (self.running) return;
     self.session = [AVAudioSession sharedInstance];
     NSError *error = nil;
-    [self.session setCategory:AVAudioSessionCategoryAmbient
+    [self.session setCategory:AVAudioSessionCategoryPlayback
                   withOptions:AVAudioSessionCategoryOptionMixWithOthers
                         error:&error];
     [self.session setActive:YES withOptions:0 error:&error];
     self.lastVolume = self.session.outputVolume;
     self.pendingUpTime = 0;
     self.lastFireTime = 0;
+    self.eventCount = 0;
     self.running = YES;
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(volumeNotification:)
                                                  name:FKVolumeDidChangeNotification
                                                object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(applicationBecameActive:)
+                                                 name:UIApplicationDidBecomeActiveNotification
+                                               object:nil];
     [self.session addObserver:self forKeyPath:@"outputVolume"
                       options:NSKeyValueObservingOptionNew
-                      context:FKVolumeKVOContext];
-    FKLog(@"volume trigger armed (up then down within %.1fs)",
-          [FKPrefs doubleForKey:@"volumeWindow" defaultValue:1.2]);
+                      context:FKVolumeSessionContext];
+    [self installVolumeView];
+    FKLog(@"volume trigger armed (up then down within %.1fs)", [FKPrefs doubleForKey:@"volumeWindow" defaultValue:1.2]);
     [self normalizeIfNeeded];
 }
 
 - (void)stop {
     if (!self.running) return;
     self.running = NO;
-    [[NSNotificationCenter defaultCenter] removeObserver:self name:FKVolumeDidChangeNotification object:nil];
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
     @try {
-        [self.session removeObserver:self forKeyPath:@"outputVolume" context:FKVolumeKVOContext];
+        [self.session removeObserver:self forKeyPath:@"outputVolume" context:FKVolumeSessionContext];
     } @catch (NSException *exception) {
         (void)exception;
     }
+    [self detachVolumeView];
     [self.session setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:nil];
     self.session = nil;
-    FKLog(@"volume trigger disarmed");
+    FKLog(@"volume trigger disarmed after %ld events", (long)self.eventCount);
 }
 
-#pragma mark - Observations
+#pragma mark - Volume view
+
+- (void)installVolumeView {
+    FKRunOnMain(^{
+        if (self.volumeView.superview) {
+            [self bindVolumeSlider];
+            return;
+        }
+        UIWindow *window = FKKeyWindow();
+        if (!window) {
+            // Try again once the app has a window.
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                if (self.running && !self.volumeView.superview) [self installVolumeView];
+            });
+            return;
+        }
+        MPVolumeView *view = [[MPVolumeView alloc] initWithFrame:CGRectMake(-3000, -3000, 120, 32)];
+        view.userInteractionEnabled = NO;
+        view.alpha = 0.011;      // must stay visible for the slider to update
+        view.hidden = NO;
+        [window addSubview:view];
+        self.volumeView = view;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [self bindVolumeSlider];
+        });
+    });
+}
+
+- (UISlider *)findSliderInView:(UIView *)view {
+    if ([view isKindOfClass:[UISlider class]]) return (UISlider *)view;
+    for (UIView *child in view.subviews) {
+        UISlider *slider = [self findSliderInView:child];
+        if (slider) return slider;
+    }
+    return nil;
+}
+
+- (void)bindVolumeSlider {
+    if (!self.running) return;
+    UISlider *slider = [self findSliderInView:self.volumeView];
+    if (!slider) {
+        FKLog(@"volume trigger: MPVolumeView slider not ready");
+        return;
+    }
+    if (self.volumeSlider == slider) return;
+    if (self.volumeSlider) {
+        @try {
+            [self.volumeSlider removeObserver:self forKeyPath:@"value" context:FKVolumeSliderContext];
+        } @catch (NSException *exception) {
+            (void)exception;
+        }
+    }
+    self.volumeSlider = slider;
+    [slider addObserver:self forKeyPath:@"value"
+                options:NSKeyValueObservingOptionNew
+                context:FKVolumeSliderContext];
+    self.lastVolume = slider.value;
+    FKLog(@"volume trigger: MPVolumeView slider bound (%.2f)", slider.value);
+}
+
+- (void)detachVolumeView {
+    FKRunOnMain(^{
+        if (self.volumeSlider) {
+            @try {
+                [self.volumeSlider removeObserver:self forKeyPath:@"value" context:FKVolumeSliderContext];
+            } @catch (NSException *exception) {
+                (void)exception;
+            }
+            self.volumeSlider = nil;
+        }
+        [self.volumeView removeFromSuperview];
+        self.volumeView = nil;
+    });
+}
+
+#pragma mark - Events
+
+- (void)applicationBecameActive:(NSNotification *)notification {
+    if (!self.running) return;
+    NSError *error = nil;
+    [self.session setActive:YES withOptions:0 error:&error];
+    [self installVolumeView];
+    self.lastVolume = self.session.outputVolume;
+    FKLog(@"volume trigger re-armed on foreground (%.2f)", self.lastVolume);
+}
 
 - (void)volumeNotification:(NSNotification *)notification {
     NSDictionary *info = notification.userInfo;
     NSString *reason = info[FKVolumeReasonKey];
     if ([reason isKindOfClass:[NSString class]] && ![reason isEqualToString:@"ExplicitVolumeChange"]) return;
     NSNumber *value = info[FKVolumeValueKey];
-    if (![value isKindOfClass:[NSNumber class]]) return;
-    [self handleVolume:value.floatValue];
+    if ([value isKindOfClass:[NSNumber class]]) [self handleVolume:value.floatValue];
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object
                         change:(NSDictionary *)change context:(void *)context {
-    if (context != FKVolumeKVOContext) {
-        [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+    if (context == FKVolumeSessionContext || context == FKVolumeSliderContext) {
+        NSNumber *value = change[NSKeyValueChangeNewKey];
+        if ([value isKindOfClass:[NSNumber class]]) [self handleVolume:value.floatValue];
         return;
     }
-    NSNumber *value = change[NSKeyValueChangeNewKey];
-    if ([value isKindOfClass:[NSNumber class]]) [self handleVolume:value.floatValue];
+    [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
 }
 
 - (void)handleVolume:(float)value {
     if (!self.running) return;
     FKRunOnMain(^{
         double now = [NSDate timeIntervalSinceReferenceDate];
-        if (now < self.suppressUntil) { self.lastVolume = value; return; }
+        if (now < self.suppressUntil) {
+            self.lastVolume = value;
+            return;
+        }
+        // Notification + KVO + slider can deliver the same change; collapse duplicates.
+        if (now - self.lastEventTime < 0.06 && fabsf(value - self.lastVolume) < 0.001) return;
         float delta = value - self.lastVolume;
+        if (fabsf(delta) < 0.001) return;
+        self.lastEventTime = now;
         self.lastVolume = value;
-        if (fabsf(delta) < 0.001f) return;
+        self.eventCount++;
 
         if (delta > 0) {
             self.pendingUpTime = now;
@@ -131,34 +240,17 @@ static void *FKVolumeKVOContext = &FKVolumeKVOContext;
 
 #pragma mark - Headroom
 
-// At 100% an "up" press produces no volume change, and at 0% a "down" press
-// produces none either. When the trigger arms at an extreme, nudge the volume to
-// the middle once so both directions can register. Best-effort: MPVolumeView's
-// slider is the only public way to set system volume.
 - (void)normalizeIfNeeded {
     if (![FKPrefs boolForKey:@"volumeNormalize" defaultValue:YES]) return;
-    float volume = self.session.outputVolume;
+    float volume = self.volumeSlider ? self.volumeSlider.value : self.session.outputVolume;
     if (volume > 0.02f && volume < 0.98f) return;
     FKRunOnMain(^{
-        UIWindow *window = FKKeyWindow();
-        if (!window) return;
-        MPVolumeView *volumeView = [[MPVolumeView alloc] initWithFrame:CGRectMake(-2000, -2000, 120, 30)];
-        volumeView.hidden = NO;
-        [window addSubview:volumeView];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            for (UIView *subview in volumeView.subviews) {
-                if (![subview isKindOfClass:[UISlider class]]) continue;
-                UISlider *slider = (UISlider *)subview;
-                [slider setValue:0.5f animated:NO];
-                [slider sendActionsForControlEvents:UIControlEventValueChanged];
-                break;
-            }
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                [volumeView removeFromSuperview];
-            });
-        });
-        double now = [NSDate timeIntervalSinceReferenceDate];
-        self.suppressUntil = now + 1.0;
+        UISlider *slider = self.volumeSlider;
+        if (!slider) return;
+        [slider setValue:0.5f animated:NO];
+        [slider sendActionsForControlEvents:UIControlEventValueChanged];
+        self.suppressUntil = [NSDate timeIntervalSinceReferenceDate] + 1.0;
+        self.pendingUpTime = 0;
         FKLog(@"volume normalized from %.2f for sequence headroom", volume);
     });
 }
