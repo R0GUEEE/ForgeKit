@@ -56,6 +56,11 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSDictionary *)scanUIText:(NSString *)needle limit:(NSInteger)limit;
 + (NSDictionary *)playerPrefsRead:(NSString *)key type:(NSString *)type;
 + (NSDictionary *)playerPrefsWrite:(NSString *)key type:(NSString *)type value:(id _Nullable)value delete:(BOOL)deleteKey;
++ (NSDictionary *)watchField:(NSString *)field
+                     ofClass:(NSString *)className
+                      object:(unsigned long long)pointer
+                     samples:(NSInteger)samples
+                  intervalMs:(NSInteger)interval;
 + (NSDictionary *)dumpWithFilter:(nullable NSString *)filter path:(nullable NSString *)path;
 
 @end

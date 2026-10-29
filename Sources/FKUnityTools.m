@@ -136,17 +136,20 @@ static NSString *FKSanitizedScriptName(NSString *name) {
     __weak typeof(self) weakSelf = self;
     context.exceptionHandler = ^(JSContext *ctx, JSValue *exception) {
         (void)ctx;
-        weakSelf->_lastError = [exception toString] ?: @"script error";
-        FKLog(@"script exception: %@", weakSelf->_lastError);
+        FKScriptEngine *strongSelf = weakSelf;
+        strongSelf->_lastError = [exception toString] ?: @"script error";
+        FKLog(@"script exception: %@", strongSelf->_lastError);
     };
     context[@"log"] = ^(id value) { FKLog(@"script: %@", value); };
     context[@"json"] = ^NSString *(id value) { return FKJSONString(value, YES); };
     context[@"sleep"] = ^(double seconds) { [NSThread sleepForTimeInterval:MIN(MAX(seconds, 0), 5.0)]; };
     context[@"uiText"] = @"";
 
+    __weak JSContext *weakContext = context;
     context[@"Class"] = @{
         @"fromName": ^JSValue *(NSString *className) {
-            if (!className.length) return [JSValue valueWithUndefinedInContext:ctx];
+            JSContext *ctx = weakContext;
+            if (!ctx || !className.length) return [JSValue valueWithUndefinedInContext:weakContext];
             JSValue *handle = [JSValue valueWithNewObjectInContext:ctx];
             handle[@"name"] = className;
             handle[@"info"] = ^NSDictionary *{

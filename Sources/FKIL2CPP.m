@@ -255,7 +255,7 @@ static NSArray<NSDictionary *> *FKClassCache(void) {
 static Il2CppClass *FKClassByName(NSString *name) {
     if (!name.length) return NULL;
     for (NSDictionary *entry in FKClassCache()) {
-        if ([entry[@"name"] isEqualToString:name]) return (Il2CppClass *)entry[@"ptr"].pointerValue;
+        if ([entry[@"name"] isEqualToString:name]) return (Il2CppClass *)[(NSValue *)entry[@"ptr"] pointerValue];
     }
     return NULL;
 }
@@ -390,7 +390,7 @@ static BOOL FKWriteValueAtType(const Il2CppType *type, void *address, id value) 
     NSInteger cap = MAX(1, MIN(limit, 5000));
     NSMutableArray *results = [NSMutableArray array];
     for (NSDictionary *entry in FKClassCache()) {
-        if (needle.length && [entry[@"name"].lowercaseString rangeOfString:needle].location == NSNotFound) continue;
+        if (needle.length && [[entry[@"name"] lowercaseString] rangeOfString:needle].location == NSNotFound) continue;
         [results addObject:@{ @"name": entry[@"name"], @"image": entry[@"image"], @"ptr": entry[@"ptr"] }];
         if ((NSInteger)results.count >= cap) break;
     }
@@ -471,7 +471,7 @@ static NSArray<NSDictionary *> *FKScanStaticFieldsForClass(Il2CppClass *target, 
     NSArray *classes = FKClassCache();
     for (NSDictionary *entry in classes) {
         if ([deadline timeIntervalSinceNow] < 0) break;
-        Il2CppClass *klass = (Il2CppClass *)entry[@"ptr"].pointerValue;
+        Il2CppClass *klass = (Il2CppClass *)[(NSValue *)entry[@"ptr"] pointerValue];
         void *iterator = NULL;
         FieldInfo *field = NULL;
         while ((field = gAPI.class_get_fields(klass, &iterator))) {
@@ -923,9 +923,9 @@ static void *FKMakeReturnStub(NSInteger kind, uint64_t value) {
         NSDictionary *record = gPatches[(NSUInteger)i];
         if (![record[@"class"] isEqualToString:className]) continue;
         if (![record[@"method"] isEqualToString:methodName]) continue;
-        MethodInfo *method = (MethodInfo *)record[@"method_ptr"].pointerValue;
-        FKWriteMethodPointer(method, record[@"original"].pointerValue);
-        void *stub = record[@"stub"].pointerValue;
+        MethodInfo *method = (MethodInfo *)[(NSValue *)record[@"method_ptr"] pointerValue];
+        FKWriteMethodPointer(method, [(NSValue *)record[@"original"] pointerValue]);
+        void *stub = [(NSValue *)record[@"stub"] pointerValue];
         if (stub) munmap(stub, (size_t)vm_page_size);
         [gPatches removeObjectAtIndex:(NSUInteger)i];
         return @{ @"ok": @YES, @"restored": @YES, @"active": @(gPatches.count) };
@@ -936,9 +936,9 @@ static void *FKMakeReturnStub(NSInteger kind, uint64_t value) {
 + (NSDictionary *)restoreAllPatches {
     NSInteger count = 0;
     for (NSDictionary *record in [gPatches reverseObjectEnumerator]) {
-        MethodInfo *method = (MethodInfo *)record[@"method_ptr"].pointerValue;
-        FKWriteMethodPointer(method, record[@"original"].pointerValue);
-        void *stub = record[@"stub"].pointerValue;
+        MethodInfo *method = (MethodInfo *)[(NSValue *)record[@"method_ptr"] pointerValue];
+        FKWriteMethodPointer(method, [(NSValue *)record[@"original"] pointerValue]);
+        void *stub = [(NSValue *)record[@"stub"] pointerValue];
         if (stub) munmap(stub, (size_t)vm_page_size);
         count++;
     }
@@ -951,7 +951,7 @@ static void *FKMakeReturnStub(NSInteger kind, uint64_t value) {
     for (NSDictionary *record in gPatches) {
         [entries addObject:@{ @"class": record[@"class"], @"method": record[@"method"],
                               @"mode": record[@"mode"],
-                              @"address": [NSString stringWithFormat:@"%p", record[@"original"].pointerValue] }];
+                              @"address": [NSString stringWithFormat:@"%p", [(NSValue *)record[@"original"] pointerValue]] }];
     }
     return @{ @"ok": @YES, @"count": @(entries.count), @"maxPatches": @64, @"patches": entries };
 }
@@ -964,7 +964,7 @@ static void *FKMakeReturnStub(NSInteger kind, uint64_t value) {
     NSInteger cap = MAX(1, MIN(limit, 500));
     NSMutableArray *owners = [NSMutableArray array];
     for (NSDictionary *entry in FKClassCache()) {
-        Il2CppClass *klass = (Il2CppClass *)entry[@"ptr"].pointerValue;
+        Il2CppClass *klass = (Il2CppClass *)[(NSValue *)entry[@"ptr"] pointerValue];
         void *iterator = NULL;
         FieldInfo *field = NULL;
         BOOL matched = NO;
@@ -987,7 +987,7 @@ static void *FKMakeReturnStub(NSInteger kind, uint64_t value) {
     NSInteger cap = MAX(1, MIN(limit, 500));
     NSMutableArray *results = [NSMutableArray array];
     for (NSDictionary *entry in FKClassCache()) {
-        Il2CppClass *klass = (Il2CppClass *)entry[@"ptr"].pointerValue;
+        Il2CppClass *klass = (Il2CppClass *)[(NSValue *)entry[@"ptr"] pointerValue];
         void *iterator = NULL;
         const MethodInfo *method = NULL;
         while ((method = gAPI.class_get_methods(klass, &iterator))) {
@@ -1008,7 +1008,7 @@ static void *FKMakeReturnStub(NSInteger kind, uint64_t value) {
     NSInteger cap = MAX(1, MIN(limit, 1000));
     NSMutableArray *results = [NSMutableArray array];
     for (NSDictionary *entry in FKClassCache()) {
-        Il2CppClass *cursor = gAPI.class_get_parent ? gAPI.class_get_parent((Il2CppClass *)entry[@"ptr"].pointerValue) : NULL;
+        Il2CppClass *cursor = gAPI.class_get_parent ? gAPI.class_get_parent((Il2CppClass *)[(NSValue *)entry[@"ptr"] pointerValue]) : NULL;
         NSInteger depth = 0;
         while (cursor && depth++ < 32) {
             if ([FKClassFullName(cursor).lowercaseString rangeOfString:needle].location != NSNotFound) {
@@ -1032,7 +1032,7 @@ static void *FKMakeReturnStub(NSInteger kind, uint64_t value) {
     for (NSDictionary *entry in FKClassCache()) {
         void *iterator = NULL;
         Il2CppClass *interface = NULL;
-        while ((interface = gAPI.class_get_interfaces((Il2CppClass *)entry[@"ptr"].pointerValue, &iterator))) {
+        while ((interface = gAPI.class_get_interfaces((Il2CppClass *)[(NSValue *)entry[@"ptr"] pointerValue], &iterator))) {
             if ([FKClassFullName(interface).lowercaseString rangeOfString:needle].location != NSNotFound) {
                 [results addObject:@{ @"class": entry[@"name"], @"interface": FKClassFullName(interface) }];
                 break;
@@ -1045,12 +1045,12 @@ static void *FKMakeReturnStub(NSInteger kind, uint64_t value) {
 
 + (NSDictionary *)findSingletonsWithImage:(NSString *)image limit:(NSInteger)limit {
     if (!FKIL2CPPResolve()) return @{ @"ok": @NO, @"error": @"IL2CPP unavailable" };
-    NSArray *names = @[@"instance", "_instance", "s_instance", "m_instance", "shared", "sharedinstance"];
+    NSArray *names = @[@"instance", @"_instance", @"s_instance", @"m_instance", @"shared", @"sharedinstance"];
     NSInteger cap = MAX(1, MIN(limit, 200));
     NSMutableArray *results = [NSMutableArray array];
     for (NSDictionary *entry in FKClassCache()) {
         if (image.length && ![entry[@"image"] isEqualToString:image]) continue;
-        Il2CppClass *klass = (Il2CppClass *)entry[@"ptr"].pointerValue;
+        Il2CppClass *klass = (Il2CppClass *)[(NSValue *)entry[@"ptr"] pointerValue];
         void *iterator = NULL;
         FieldInfo *field = NULL;
         while ((field = gAPI.class_get_fields(klass, &iterator))) {
@@ -1297,8 +1297,8 @@ static void *FKMakeReturnStub(NSInteger kind, uint64_t value) {
     NSInteger classCount = 0, fieldCount = 0, methodCount = 0;
 
     for (NSDictionary *entry in FKClassCache()) {
-        if (needle.length && [entry[@"name"].lowercaseString rangeOfString:needle].location == NSNotFound) continue;
-        Il2CppClass *klass = (Il2CppClass *)entry[@"ptr"].pointerValue;
+        if (needle.length && [[entry[@"name"] lowercaseString] rangeOfString:needle].location == NSNotFound) continue;
+        Il2CppClass *klass = (Il2CppClass *)[(NSValue *)entry[@"ptr"] pointerValue];
         [output appendFormat:@"\nclass %@ // %@\n", entry[@"name"], entry[@"image"]];
         void *iterator = NULL;
         FieldInfo *field = NULL;
