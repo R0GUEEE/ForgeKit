@@ -704,6 +704,12 @@ static BOOL FKAgentToolMutates(NSString *name) {
     [task resume];
 }
 
+- (void)emitEvent:(NSDictionary *)event {
+    void (^handler)(NSDictionary *) = self.eventHandler;
+    if (!handler) return;
+    dispatch_async(dispatch_get_main_queue(), ^{ handler(event); });
+}
+
 - (NSDictionary *)executeTool:(NSString *)name arguments:(NSDictionary *)arguments {
     if (![self toolAllowed:name]) {
         NSDictionary *blocked = @{ @"ok": @NO,
@@ -711,6 +717,7 @@ static BOOL FKAgentToolMutates(NSString *name) {
                                               @"tool %@ is excluded by the current tool profile (%@)",
                                               name, self.toolProfile] };
         [self recordActivity:name arguments:arguments result:blocked];
+        [self emitEvent:@{ @"type": @"tool_end", @"tool": name ?: @"?", @"ok": @NO, @"result": blocked }];
         return blocked;
     }
     if (FKAgentToolMutates(name) && !self.allowMutations) {
@@ -719,6 +726,7 @@ static BOOL FKAgentToolMutates(NSString *name) {
         [self recordActivity:name arguments:arguments result:blocked];
         return blocked;
     }
+    [self emitEvent:@{ @"type": @"tool_start", @"tool": name ?: @"?", @"arguments": arguments ?: @{} }];
     NSDictionary *result = nil;
     @try {
         result = [FKTools callTool:name arguments:arguments] ?: @{ @"ok": @NO, @"error": @"unknown tool" };
@@ -726,6 +734,9 @@ static BOOL FKAgentToolMutates(NSString *name) {
         result = @{ @"ok": @NO, @"error": exception.reason ?: @"tool threw" };
     }
     [self recordActivity:name arguments:arguments result:result];
+    [self emitEvent:@{ @"type": @"tool_end", @"tool": name ?: @"?",
+                       @"ok": result[@"ok"] ?: @NO,
+                       @"result": result ?: @{} }];
     return result;
 }
 

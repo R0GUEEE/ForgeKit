@@ -26,6 +26,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, assign) NSInteger contextMessages;
 @property (nonatomic, assign) NSTimeInterval requestTimeout;
 @property (nonatomic, readonly) NSDictionary *lastUsage;
+@property (nonatomic, copy, nullable) void (^eventHandler)(NSDictionary *event);
 
 + (NSString *)apiKey;
 + (void)setAPIKey:(nullable NSString *)key;

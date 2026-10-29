@@ -421,7 +421,7 @@ the app's privacy manifest.
 
 ## Agent
 
-A chat agent lives in the panel (**Agent** tile) and speaks any OpenAI-compatible
+A full chat interface lives in the panel (**Agent** tile) and speaks any OpenAI-compatible
 chat-completions endpoint. It is a real tool loop: the model receives ForgeKit's tool
 definitions, calls them, receives JSON results, and iterates until it can answer.
 
@@ -447,6 +447,11 @@ Panel → Agent → ✎   new conversation
   screen reopens or the app relaunches. Only the explicit **New conversation** button
   (✎) or *Clear conversation* in settings erases it.
 * **API key** is stored in the keychain (`com.r0guee.forgekit.agent`), never in defaults.
+* **Chat design** — model/provider header with token usage, message bubbles, markdown
+  rendering (bold, italic, inline code, fenced blocks), live tool cards that show
+  `running` → `done`/`failed` with a one-line result, tap a card for the full JSON,
+  swipe any message to copy, a growing composer with send/stop, a wand menu of quick
+  tasks, and an empty state with three suggestion cards.
 * **Presets** seed three workflows: inspect the app, build a tweak, patch a value.
 
 ### Building tweaks
