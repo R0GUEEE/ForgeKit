@@ -106,6 +106,9 @@
 
 @interface FKKeychainViewController ()
 @property (nonatomic, strong) NSArray<NSDictionary *> *sections;
+- (void)load;
+- (void)applyGroups:(NSArray<NSDictionary *> *)groups;
+- (NSArray *)rowsFor:(NSArray *)items;
 @end
 
 @implementation FKKeychainViewController
@@ -122,41 +125,81 @@
 }
 
 - (void)load {
+    self.navigationItem.rightBarButtonItem.enabled = NO;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        NSArray *generic = FKKeychainItems(@"generic");
-        NSArray *internet = FKKeychainItems(@"internet");
-        NSArray *certificates = FKKeychainItems(@"certificate");
-        NSMutableArray *sections = [NSMutableArray array];
-        if (generic.count) [sections addObject:@{ @"title": [NSString stringWithFormat:@"Generic (%lu)", (unsigned long)generic.count], @"rows": [self rowsFor:generic] }];
-        if (internet.count) [sections addObject:@{ @"title": [NSString stringWithFormat:@"Internet (%lu)", (unsigned long)internet.count], @"rows": [self rowsFor:internet] }];
-        if (certificates.count) [sections addObject:@{ @"title": [NSString stringWithFormat:@"Certificates (%lu)", (unsigned long)certificates.count], @"rows": [self rowsFor:certificates] }];
-        if (!sections.count) [sections addObject:@{ @"title": @"Keychain", @"rows": @[ @{ @"title": @"No items visible", @"subtitle": @"The app has no keychain items in its access groups." } ] }];
+        NSMutableArray *groups = [NSMutableArray array];
+        for (NSString *kind in @[@"generic", @"internet", @"certificate"]) {
+            @try {
+                NSArray *items = FKKeychainItems(kind);
+                [groups addObject:@{ @"kind": kind, @"items": items ?: @[],
+                                     @"status": @(FKKeychainLastStatus()) }];
+            } @catch (NSException *exception) {
+                [groups addObject:@{ @"kind": kind, @"items": @[],
+                                     @"status": @(errSecInternalError),
+                                     @"error": exception.reason ?: @"query failed" }];
+            }
+        }
         dispatch_async(dispatch_get_main_queue(), ^{
-            self.sections = sections;
-            [self.tableView reloadData];
+            [self applyGroups:groups];
         });
     });
+}
+
+- (void)applyGroups:(NSArray<NSDictionary *> *)groups {
+    @try {
+        NSMutableArray *sections = [NSMutableArray array];
+        for (NSDictionary *group in groups) {
+            NSArray *items = group[@"items"];
+            if (![items isKindOfClass:[NSArray class]] || items.count == 0) continue;
+            NSArray *rows = [self rowsFor:items];
+            if (rows.count == 0) continue;
+            [sections addObject:@{
+                @"title": [NSString stringWithFormat:@"%@ (%lu)",
+                           [(NSString *)group[@"kind"] capitalizedString], (unsigned long)items.count],
+                @"rows": rows,
+            }];
+        }
+        if (sections.count == 0) {
+            int status = [(NSNumber *)groups.lastObject[@"status"] intValue];
+            [sections addObject:@{ @"title": @"Keychain", @"rows": @[
+                @{ @"title": @"No items visible", @"subtitle": FKKeychainStatusText(status) },
+                @{ @"title": @"Why?", @"subtitle": @"A jailed app only sees its own keychain access groups; certificates come from the app's own group." },
+            ] }];
+        }
+        self.sections = sections;
+        [self.tableView reloadData];
+    } @catch (NSException *exception) {
+        self.sections = @[ @{ @"title": @"Keychain error", @"rows": @[
+            @{ @"title": exception.name ?: @"Exception", @"subtitle": exception.reason ?: @"" } ] } ];
+        [self.tableView reloadData];
+    }
+    self.navigationItem.rightBarButtonItem.enabled = YES;
 }
 
 - (NSArray *)rowsFor:(NSArray *)items {
     __weak typeof(self) weakSelf = self;
     NSMutableArray *rows = [NSMutableArray array];
-    for (NSDictionary *item in items) {
-        NSString *service = item[@"service"] ?: item[@"account"] ?: @"(unnamed)";
-        NSString *account = item[@"account"] ?: @"";
-        NSString *subtitle = account.length ? account : (item[@"access_group"] ?: @"");
-        id secret = item[@"text"] ?: item[@"data"];
-        [rows addObject:@{
+    for (id candidate in items) {
+        if (![candidate isKindOfClass:[NSDictionary class]]) continue;
+        NSDictionary *item = candidate;
+        NSString *service = [item[@"service"] isKindOfClass:[NSString class]] ? item[@"service"] : nil;
+        NSString *account = [item[@"account"] isKindOfClass:[NSString class]] ? item[@"account"] : nil;
+        NSString *group = [item[@"access_group"] isKindOfClass:[NSString class]] ? item[@"access_group"] : nil;
+        if (!service.length) service = account.length ? account : @"(unnamed)";
+        NSString *subtitle = account.length ? account : (group ?: @"");
+
+        NSMutableDictionary *row = [@{
             @"title": service,
             @"subtitle": subtitle,
             @"chevron": @YES,
-            @"action": ^{
+            @"action": [^{
                 NSString *body = FKJSONString(item, YES);
                 UIViewController *controller = [FKTextViewController viewerWithTitle:service text:body];
                 [weakSelf.navigationController pushViewController:controller animated:YES];
-            },
-            @"_secret": secret ?: @"",
-        }];
+            } copy],
+        } mutableCopy];
+        [rows addObject:row];
+        if (rows.count >= 300) break;
     }
     return rows;
 }

@@ -67,6 +67,8 @@ FOUNDATION_EXPORT NSString *FKExpandPath(NSString *path);
 FOUNDATION_EXPORT NSArray<NSDictionary *> *FKMachODependencies(NSString *path);
 FOUNDATION_EXPORT NSArray<NSString *> *FKLoadedImages(void);
 FOUNDATION_EXPORT NSArray<NSDictionary *> *FKKeychainItems(NSString *itemClass);
+FOUNDATION_EXPORT int FKKeychainLastStatus(void);
+FOUNDATION_EXPORT NSString *FKKeychainStatusText(int status);
 FOUNDATION_EXPORT NSArray<NSDictionary *> *FKHTTPCookies(void);
 FOUNDATION_EXPORT NSDictionary *FKApplicationPaths(void);
 

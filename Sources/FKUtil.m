@@ -15,7 +15,7 @@
 #import <dlfcn.h>
 #import <mach-o/dyld.h>
 
-NSString * const FKVersionString = @"1.5.0";
+NSString * const FKVersionString = @"1.5.1";
 NSString * const FKServerDidChangeNotification = @"FKServerDidChangeNotification";
 
 static NSMutableArray<NSString *> *FKLogStorage(void) {
@@ -632,34 +632,92 @@ NSArray<NSString *> *FKLoadedImages(void) {
 
 #pragma mark - Keychain / cookies
 
+static int gFKKeychainStatus = 0;
+
+int FKKeychainLastStatus(void) { return gFKKeychainStatus; }
+
+NSString *FKKeychainStatusText(int status) {
+    switch (status) {
+        case errSecSuccess: return @"success";
+        case errSecItemNotFound: return @"no items";
+        case errSecInteractionNotAllowed: return @"interaction not allowed (device locked?)";
+        case errSecMissingEntitlement: return @"missing keychain entitlement";
+        case errSecAuthFailed: return @"authentication failed";
+        case errSecParam: return @"invalid query parameters";
+        case errSecNotAvailable: return @"keychain not available";
+        default: return [NSString stringWithFormat:@"OSStatus %d", status];
+    }
+}
+
+static NSString *FKKeychainScalarString(id value) {
+    if ([value isKindOfClass:[NSString class]])
+        return [(NSString *)value length] > 4096 ? [(NSString *)value substringToIndex:4096] : value;
+    if ([value isKindOfClass:[NSNumber class]]) return [(NSNumber *)value stringValue];
+    if ([value isKindOfClass:[NSData class]])
+        return [(NSData *)value base64EncodedStringWithOptions:0];
+    return nil;
+}
+
 NSArray<NSDictionary *> *FKKeychainItems(NSString *itemClass) {
+    gFKKeychainStatus = errSecSuccess;
+    NSString *kind = [itemClass lowercaseString] ?: @"";
     CFStringRef secClass = kSecClassGenericPassword;
-    if ([itemClass.lowercaseString isEqualToString:@"internet"]) secClass = kSecClassInternetPassword;
-    if ([itemClass.lowercaseString isEqualToString:@"certificate"]) secClass = kSecClassCertificate;
-    NSDictionary *query = @{
+    BOOL certificates = NO;
+    if ([kind isEqualToString:@"internet"]) {
+        secClass = kSecClassInternetPassword;
+    } else if ([kind isEqualToString:@"certificate"]) {
+        secClass = kSecClassCertificate;
+        certificates = YES;
+    }
+
+    NSMutableDictionary *query = [@{
         (__bridge id)kSecClass: (__bridge id)secClass,
         (__bridge id)kSecReturnAttributes: @YES,
-        (__bridge id)kSecReturnData: @YES,
         (__bridge id)kSecMatchLimit: (__bridge id)kSecMatchLimitAll,
-    };
+    } mutableCopy];
+    // kSecReturnData is only valid for password classes; certificates return refs.
+    if (!certificates) query[(__bridge id)kSecReturnData] = @YES;
+
     CFTypeRef result = NULL;
     OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
-    if (status != errSecSuccess || !result) return @[];
-    NSArray *items = (__bridge_transfer NSArray *)result;
-    NSMutableArray *output = [NSMutableArray array];
-    for (NSDictionary *item in items) {
-        NSMutableDictionary *entry = [NSMutableDictionary dictionary];
-        entry[@"service"] = item[(__bridge id)kSecAttrService] ?: @"";
-        entry[@"account"] = item[(__bridge id)kSecAttrAccount] ?: @"";
-        entry[@"access_group"] = item[(__bridge id)kSecAttrAccessGroup] ?: @"";
-        entry[@"class"] = item[(__bridge id)kSecClass] ?: @"";
-        NSData *secret = item[(__bridge id)kSecValueData];
-        if ([secret isKindOfClass:[NSData class]]) {
-            entry[@"data"] = [secret base64EncodedStringWithOptions:0];
-            NSString *utf8 = [[NSString alloc] initWithData:secret encoding:NSUTF8StringEncoding];
-            if (utf8.length) entry[@"text"] = utf8;
+    gFKKeychainStatus = status;
+    if (status != errSecSuccess || result == NULL) return @[];
+
+    id bridged = CFBridgingRelease(result);
+    NSArray *raw = nil;
+    if ([bridged isKindOfClass:[NSArray class]]) raw = bridged;
+    else if ([bridged isKindOfClass:[NSDictionary class]]) raw = @[bridged];
+    else return @[];
+
+    NSMutableArray<NSDictionary *> *output = [NSMutableArray array];
+    for (id candidate in raw) {
+        @autoreleasepool {
+            if (![candidate isKindOfClass:[NSDictionary class]]) continue;
+            NSDictionary *item = (NSDictionary *)candidate;
+            NSString *service = FKKeychainScalarString(item[(__bridge id)kSecAttrService]);
+            NSString *account = FKKeychainScalarString(item[(__bridge id)kSecAttrAccount]);
+            NSString *label = FKKeychainScalarString(item[(__bridge id)kSecAttrLabel]);
+            NSString *group = FKKeychainScalarString(item[(__bridge id)kSecAttrAccessGroup]);
+
+            NSMutableDictionary *entry = [NSMutableDictionary dictionary];
+            entry[@"service"] = service ?: label ?: @"";
+            entry[@"account"] = account ?: @"";
+            entry[@"label"] = label ?: @"";
+            entry[@"access_group"] = group ?: @"";
+            entry[@"class"] = kind;
+
+            if (!certificates) {
+                id data = item[(__bridge id)kSecValueData];
+                if ([data isKindOfClass:[NSData class]] && [(NSData *)data length] <= 262144) {
+                    entry[@"data"] = [(NSData *)data base64EncodedStringWithOptions:0];
+                    NSString *text = [[NSString alloc] initWithData:(NSData *)data
+                                                           encoding:NSUTF8StringEncoding];
+                    if (text.length) entry[@"text"] = text;
+                }
+            }
+            [output addObject:entry];
+            if (output.count >= 500) break;
         }
-        [output addObject:entry];
     }
     return output;
 }
