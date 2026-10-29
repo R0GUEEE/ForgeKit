@@ -26,7 +26,7 @@ jobs:
           SDK=/tmp/sdks/iPhoneOS16.5.sdk
           mkdir -p build
           COMMON="-isysroot $SDK -fobjc-arc -fblocks -O2 -fvisibility=hidden -dynamiclib -fuse-ld=lld -ISources -Wl,-install_name,@rpath/ForgeKit.dylib -Wl,-platform_version,ios,14.0,16.5"
-          FRAMEWORKS="-framework Foundation -framework UIKit -framework CoreGraphics -framework QuartzCore -framework JavaScriptCore -framework Security -framework CoreImage -framework AVFoundation -framework MediaPlayer -framework WebKit -lz -lsqlite3"
+          FRAMEWORKS="-framework Foundation -framework UIKit -framework CoreGraphics -framework QuartzCore -framework JavaScriptCore -framework Security -framework CoreImage -framework AVFoundation -lz -lsqlite3"
           clang -target arm64-apple-ios14.0 $COMMON $FRAMEWORKS Sources/*.m -o build/ForgeKit-arm64.dylib
           clang -target arm64e-apple-ios14.0 $COMMON $FRAMEWORKS Sources/*.m -o build/ForgeKit-arm64e.dylib
           python3 tools/make-fat.py build/ForgeKit.dylib build/ForgeKit-arm64.dylib build/ForgeKit-arm64e.dylib
