@@ -4,6 +4,8 @@
 
 #import "ForgeKit.h"
 #import "FKPanelScreens.h"
+#import <ctype.h>
+#import <math.h>
 
 #pragma mark - Tile
 
@@ -240,7 +242,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
     hint.textColor = [UIColor secondaryLabelColor];
     NSString *port = [NSString stringWithFormat:@"%ld", (long)[FKPrefs integerForKey:@"port" defaultValue:8787]];
     hint.text = [NSString stringWithFormat:
-                 @"Hold the left side of the status bar to open this panel.\n"
+                 @"Long-press the time in the status bar to open this panel.\n"
                  @"MCP endpoint: http://%@:%@/mcp\n"
                  @"Dashboard: http://%@:%@/?token=%@",
                  FKLanAddress(), port, FKLanAddress(), port, [FKPrefs token]];
@@ -361,6 +363,74 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
 
 @end
 
+
+#pragma mark - Status bar clock
+
+static BOOL FKClockLikeString(NSString *text) {
+    if (![text isKindOfClass:[NSString class]]) return NO;
+    NSString *trimmed = [text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (trimmed.length < 3 || trimmed.length > 9) return NO;
+    NSRange colon = [trimmed rangeOfString:@":"];
+    if (colon.location == NSNotFound || colon.location < 1 || colon.location > 2) return NO;
+    for (NSUInteger i = 0; i < colon.location; i++) {
+        if (!isdigit((unsigned char)[trimmed characterAtIndex:i])) return NO;
+    }
+    if (trimmed.length < colon.location + 3) return NO;
+    for (NSUInteger i = 0; i < 2; i++) {
+        if (!isdigit((unsigned char)[trimmed characterAtIndex:colon.location + 1 + i])) return NO;
+    }
+    NSString *suffix = [[trimmed substringFromIndex:colon.location + 3]
+                        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]].uppercaseString;
+    return suffix.length == 0 || [suffix isEqualToString:@"AM"] || [suffix isEqualToString:@"PM"];
+}
+
+static NSString *FKClockCandidateString(UIView *view) {
+    if ([view isKindOfClass:[UILabel class]]) return ((UILabel *)view).text;
+    if (view.accessibilityLabel.length) return view.accessibilityLabel;
+    if (view.accessibilityIdentifier.length) return view.accessibilityIdentifier;
+    return nil;
+}
+
+static CGRect FKFindClockView(UIView *view, UIWindow *window, CGRect *timeFallback) {
+    if (!view || view.hidden || view.alpha < 0.05) return CGRectNull;
+    CGRect frame = [view convertRect:view.bounds toCoordinateSpace:window.screen.coordinateSpace];
+    if (FKClockLikeString(FKClockCandidateString(view))) return frame;
+
+    // Some builds expose the clock through a class name instead of text.
+    if (timeFallback && CGRectIsNull(*timeFallback)) {
+        NSString *className = NSStringFromClass([view class]);
+        if ([className containsString:@"Time"] && frame.size.width >= 16 &&
+            frame.size.height >= 10 && frame.size.height <= 40) {
+            *timeFallback = frame;
+        }
+    }
+    for (UIView *subview in view.subviews) {
+        CGRect result = FKFindClockView(subview, window, timeFallback);
+        if (!CGRectIsNull(result)) return result;
+    }
+    return CGRectNull;
+}
+
+// Screen-space frame of the status bar clock, or CGRectNull when it is not
+// rendered (app hides the bar, immersive content, external display).
+static CGRect FKStatusBarClockFrame(void) {
+    UIApplication *application = [UIApplication sharedApplication];
+    for (UIScene *scene in application.connectedScenes) {
+        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows) {
+            NSString *className = NSStringFromClass([window class]);
+            BOOL isStatusBarWindow = [className containsString:@"StatusBar"] ||
+                                     fabs(window.windowLevel - UIWindowLevelStatusBar) < 1.0;
+            if (!isStatusBarWindow) continue;
+            CGRect fallback = CGRectNull;
+            CGRect frame = FKFindClockView(window, window, &fallback);
+            if (!CGRectIsNull(frame) && frame.size.width > 4 && frame.size.height > 4) return frame;
+            if (!CGRectIsNull(fallback)) return fallback;
+        }
+    }
+    return CGRectNull;
+}
+
 #pragma mark - Panel
 
 @interface FKPanel () <UIGestureRecognizerDelegate>
@@ -450,28 +520,37 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
         [_observedWindows addObject:window];
     }
     UILongPressGestureRecognizer *press =
-        [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleStatusBarPress:)];
-    press.minimumPressDuration = MAX(0.35, [FKPrefs doubleForKey:@"gestureDuration" defaultValue:0.7]);
-    press.allowableMovement = 26;
+        [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleClockPress:)];
+    press.minimumPressDuration = MAX(0.25, [FKPrefs doubleForKey:@"gestureDuration" defaultValue:0.5]);
+    press.allowableMovement = 18;
     press.cancelsTouchesInView = NO;
     press.delegate = self;
     [window addGestureRecognizer:press];
 }
 
-- (BOOL)statusBarZoneContainsPoint:(CGPoint)point inView:(UIView *)view {
-    CGFloat statusHeight = 20;
-    UIWindowScene *scene = view.window.windowScene ?: FKActiveWindowScene();
-    if (scene.statusBarManager) statusHeight = MAX(statusHeight, scene.statusBarManager.statusBarFrame.size.height);
-    BOOL inStatusBar = point.y <= statusHeight + 12 && point.x <= 120;
-    BOOL onEdge = [FKPrefs boolForKey:@"edgeFallback" defaultValue:YES] && point.x <= 16 && point.y < 220;
-    return inStatusBar || onEdge;
+// Trigger zone in the recognizer window's coordinate space. Prefers the real
+// clock frame; falls back to the top-left status bar area when the clock cannot
+// be located (hidden status bar, unusual status bar implementation).
+- (CGRect)clockZoneInWindow:(UIWindow *)window {
+    if (!window) return CGRectNull;
+    CGRect screenFrame = FKStatusBarClockFrame();
+    if (!CGRectIsNull(screenFrame)) {
+        return CGRectInset([window convertRect:screenFrame fromWindow:nil], -4, -4);
+    }
+    if (![FKPrefs boolForKey:@"clockFallback" defaultValue:YES]) return CGRectNull;
+    CGFloat statusHeight = 44;
+    UIWindowScene *scene = window.windowScene ?: FKActiveWindowScene();
+    if (scene.statusBarManager) statusHeight = MAX(20, scene.statusBarManager.statusBarFrame.size.height);
+    return CGRectMake(0, 0, 130, statusHeight + 8);
 }
 
-- (void)handleStatusBarPress:(UILongPressGestureRecognizer *)gesture {
+- (void)handleClockPress:(UILongPressGestureRecognizer *)gesture {
     if (gesture.state != UIGestureRecognizerStateBegan) return;
     UIView *view = gesture.view;
+    CGRect zone = [self clockZoneInWindow:view.window];
+    if (CGRectIsNull(zone)) return;
     CGPoint point = [gesture locationInView:view];
-    if (![self statusBarZoneContainsPoint:point inView:view]) return;
+    if (!CGRectContainsPoint(zone, point)) return;
     if ([FKPrefs boolForKey:@"haptics" defaultValue:YES]) {
         UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
         [generator impactOccurred];
@@ -482,8 +561,9 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
     UIView *view = gestureRecognizer.view;
     if (!view) return NO;
-    CGPoint point = [touch locationInView:view];
-    return [self statusBarZoneContainsPoint:point inView:view];
+    CGRect zone = [self clockZoneInWindow:view.window];
+    if (CGRectIsNull(zone)) return NO;
+    return CGRectContainsPoint(zone, [touch locationInView:view]);
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer

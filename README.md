@@ -9,7 +9,7 @@ MobileSubstrate, ElleKit or libhooker). Every method replacement goes through th
 Objective-C runtime, so the same binary also works on a jailbroken device.
 
 ```
-Hold the left side of the status bar   →   panel opens
+Long-press the clock in the status bar →   panel opens
 http://<device-ip>:8787/mcp            →   MCP endpoint (bearer token)
 http://<device-ip>:8787/?token=<token> →   web dashboard
 ```
@@ -22,7 +22,7 @@ Built binary: `ForgeKit.dylib` — arm64 + arm64e, iOS 14.0+, 932,912 bytes.
 
 | Area | Capability |
 |---|---|
-| Hidden panel | Long-press the left third of the status bar (or the left screen edge when the bar is hidden). Opens a window above the app at `UIWindowLevelAlert + 100`. |
+| Hidden panel | **Long-press the time** in the status bar. The clock view is located by its text (12/24-hour and locale formats) or class, so the hot zone tracks the real clock frame; a top-left status rectangle is used when the clock is not rendered. Opens a window above the app at `UIWindowLevelAlert + 100`. |
 | File browser | Container/root navigation, search, swipe rename/delete, context menus, text editor with save, hex viewer, image viewer, plist viewer/editor, zip create/extract, share sheet, chmod, POSIX attributes. |
 | App root management | Bundle, data container, Documents, Library, tmp, app-group containers, `/`, `/var`, `/var/mobile`, bundle/data container roots, optional `/var/jb`. Container enumeration across the device when the sandbox permits it. |
 | App introspection | Info.plist, entitlements from the code signature and embedded profile, URL schemes, Mach-O dependencies/rpaths for the app, Frameworks and PlugIns, loaded images, keychain items, HTTP cookies. |
@@ -102,9 +102,12 @@ Without it the server still binds and works from Safari on the device
 
 ## Using the panel
 
-* **Trigger** — hold the left side of the status bar for ~0.7 s. If the app hides
-  the status bar, hold the left screen edge (top 220 pt) instead. Both timings and
-  the edge fallback are configurable in Settings.
+* **Trigger** — long-press the time in the status bar (~0.5 s). The clock frame is
+  resolved on every touch by walking the status-bar window for a clock-formatted
+  label (`9:41`, `09:41`, `9:41 AM`) or a `*Time*` view, then converted to screen
+  coordinates and inset by 4 pt. If the app hides the status bar, the top-left
+  status-area rectangle is used instead (can be disabled in Settings). Hold
+  duration, haptics and the fallback are configurable.
 * **Files** — starts in the app container. Toolbar: roots, go-to-path, hidden
   files, sort. Long-press a row for open / rename / duplicate / compress / share /
   info / delete. Text-like files open in an editor with Save; everything else
@@ -113,7 +116,7 @@ Without it the server still binds and works from Safari on the device
   token, scan the QR code, open the dashboard, inspect the request log.
 * **Runtime** — evaluate JavaScript with `fk.read`, `fk.write`, `fk.list`,
   `fk.stat`, `fk.info`, `fk.log`, `fk.sleep`.
-* **Settings** — hold duration, haptics, edge fallback, token requirement,
+* **Settings** — hold duration, haptics, clock-area fallback, token requirement,
   start-on-launch, port, token regeneration, log clearing.
 
 ---
@@ -201,7 +204,7 @@ Sources/
   FKUtil.m            paths, sandbox probes, entitlements, Mach-O deps, keychain,
                       cookies, formatting, swizzling, window helpers, preferences
   FKHooks.m           constructor, UIWindow swizzles, notification observers
-  FKPanel.m           panel lifecycle, status-bar gesture, home screen
+  FKPanel.m           panel lifecycle, status-bar clock gesture, home screen
   FKPanelScreens.h    internal screen declarations
   FKPanelScreens.m    defaults, keychain, settings, log
   FKServerScreens.m   network console, JavaScript console
@@ -219,9 +222,11 @@ Resources/dashboard.html  source of the dashboard (regenerate FKWebUI.m)
 ```
 
 Panel window is created lazily and never touches the app's view hierarchy.
-Gesture recognizers are added to every window at or below `UIWindowLevelAlert`,
-including the app's status-bar window, with `cancelsTouchesInView = NO` and a
-delegate that only claims touches inside the trigger zone.
+A `UILongPressGestureRecognizer` is added to every window at or below
+`UIWindowLevelAlert`, including the app's own status-bar window. Its delegate
+returns `YES` only for touches inside the clock frame, `cancelsTouchesInView` is
+`NO`, and simultaneous recognition is allowed, so the rest of the status bar and
+the app's touch handling are untouched.
 
 ---
 

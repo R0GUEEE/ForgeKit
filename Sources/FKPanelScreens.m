@@ -230,13 +230,14 @@
     NSMutableArray *sections = [NSMutableArray array];
 
     [sections addObject:@{ @"title": @"Trigger", @"rows": @[
+        @{ @"title": @"Activation", @"subtitle": @"Long-press the time in the status bar" },
         @{ @"title": @"Haptic feedback", @"subtitle": @"Vibrate when the panel opens",
            @"toggle": ^(BOOL on) { save(@"haptics", on); },
            @"toggleValue": @([FKPrefs boolForKey:@"haptics" defaultValue:YES]) },
-        @{ @"title": @"Left-edge fallback", @"subtitle": @"Also open from the left screen edge when the status bar is hidden",
-           @"toggle": ^(BOOL on) { save(@"edgeFallback", on); },
-           @"toggleValue": @([FKPrefs boolForKey:@"edgeFallback" defaultValue:YES]) },
-        @{ @"title": @"Hold duration", @"subtitle": [NSString stringWithFormat:@"%.1f s", [FKPrefs doubleForKey:@"gestureDuration" defaultValue:0.7]],
+        @{ @"title": @"Clock-area fallback", @"subtitle": @"Use the top-left status bar area when the clock is not visible",
+           @"toggle": ^(BOOL on) { save(@"clockFallback", on); },
+           @"toggleValue": @([FKPrefs boolForKey:@"clockFallback" defaultValue:YES]) },
+        @{ @"title": @"Hold duration", @"subtitle": [NSString stringWithFormat:@"%.1f s", [FKPrefs doubleForKey:@"gestureDuration" defaultValue:0.5]],
            @"chevron": @YES,
            @"action": ^{ [weakSelf chooseDuration]; } },
     ] }];
@@ -280,7 +281,7 @@
 
 - (void)chooseDuration {
     UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"Hold duration" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
-    for (NSNumber *value in @[@0.4, @0.7, @1.2]) {
+    for (NSNumber *value in @[@0.35, @0.5, @0.8]) {
         NSString *title = [NSString stringWithFormat:@"%.1f s", value.doubleValue];
         [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
             [FKPrefs setDouble:value.doubleValue forKey:@"gestureDuration"];
