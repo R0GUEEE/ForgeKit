@@ -117,20 +117,18 @@ static void FKMakeWebViewInspectable(WKWebView *webView) {
 @implementation FKUtilities
 
 + (void)installWebInspectorSwizzle {
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        Class webViewClass = NSClassFromString(@"WKWebView");
-        if (!webViewClass) {
-            FKLog(@"webinspector: WKWebView not present");
-            return;
-        }
-        FKSwizzleInstance(webViewClass, @selector(loadRequest:), @selector(fk_loadRequest:));
-        FKSwizzleInstance(webViewClass, @selector(loadHTMLString:baseURL:), @selector(fk_loadHTMLString:baseURL:));
-        FKSwizzleInstance(webViewClass, @selector(loadFileURL:allowingReadAccessToURL:),
-                          @selector(fk_loadFileURL:allowingReadAccessToURL:));
-        gWebInspectorInstalled = YES;
-        FKLog(@"webinspector: WKWebView load swizzles installed");
-    });
+    if (gWebInspectorInstalled) return;
+    Class webViewClass = NSClassFromString(@"WKWebView");
+    if (!webViewClass) {
+        FKLog(@"webinspector: WKWebView not present yet");
+        return;
+    }
+    FKSwizzleInstance(webViewClass, @selector(loadRequest:), @selector(fk_loadRequest:));
+    FKSwizzleInstance(webViewClass, @selector(loadHTMLString:baseURL:), @selector(fk_loadHTMLString:baseURL:));
+    FKSwizzleInstance(webViewClass, @selector(loadFileURL:allowingReadAccessToURL:),
+                      @selector(fk_loadFileURL:allowingReadAccessToURL:));
+    gWebInspectorInstalled = YES;
+    FKLog(@"webinspector: WKWebView load swizzles installed");
 }
 
 + (NSDictionary *)webInspectorStatus {
@@ -256,12 +254,13 @@ static void FKMakeWebViewInspectable(WKWebView *webView) {
     NSMutableArray *written = [NSMutableArray array];
     NSMutableArray *paths = [NSMutableArray array];
     [paths addObject:[FKDocumentsPath() stringByAppendingPathComponent:@"FridaGadget.config"]];
-    [paths addObject:[FKBundlePath() stringByAppendingPathComponent:@"FridaGadget.config"]];
     NSString *gadget = FKUtilityFirstExisting(@[@"FridaGadget.dylib", @"frida-gadget.dylib",
                                                 @"libFridaGadget.dylib",
                                                 @"frida-gadget-17.24.3-ios-universal.dylib"]);
-    if (gadget) [paths addObject:[[gadget stringByDeletingLastPathComponent]
-                                  stringByAppendingPathComponent:@"FridaGadget.config"]];
+    // Never write inside the app bundle: that breaks the code signature seal.
+    if (gadget && [gadget hasPrefix:FKDocumentsPath()])
+        [paths addObject:[[gadget stringByDeletingLastPathComponent]
+                          stringByAppendingPathComponent:@"FridaGadget.config"]];
     for (NSString *path in paths) {
         if (![[NSFileManager defaultManager] isWritableFileAtPath:[path stringByDeletingLastPathComponent]]) continue;
         [written addObject:FKUtilityWriteJSON(payload, path)];
