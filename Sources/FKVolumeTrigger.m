@@ -14,7 +14,6 @@
 
 #import "ForgeKit.h"
 #import <AVFoundation/AVFoundation.h>
-#import <MediaPlayer/MediaPlayer.h>
 #import <math.h>
 
 static NSString * const FKVolumeDidChangeNotification = @"AVSystemController_SystemVolumeDidChangeNotification";
@@ -26,7 +25,7 @@ static void *FKVolumeSliderContext = &FKVolumeSliderContext;
 @interface FKVolumeTrigger ()
 @property (nonatomic, readwrite, getter=isRunning) BOOL running;
 @property (nonatomic, strong) AVAudioSession *session;
-@property (nonatomic, strong) MPVolumeView *volumeView;
+@property (nonatomic, strong) UIView *volumeView;
 @property (nonatomic, weak) UISlider *volumeSlider;
 @property (nonatomic, assign) float lastVolume;
 @property (nonatomic, assign) double pendingUpTime;
@@ -116,7 +115,17 @@ static void *FKVolumeSliderContext = &FKVolumeSliderContext;
             });
             return;
         }
-        MPVolumeView *view = [[MPVolumeView alloc] initWithFrame:CGRectMake(-3000, -3000, 120, 32)];
+        Class volumeClass = NSClassFromString(@"MPVolumeView");
+        if (!volumeClass) {
+            static dispatch_once_t once;
+            dispatch_once(&once, ^{ dlopen("/System/Library/Frameworks/MediaPlayer.framework/MediaPlayer", RTLD_LAZY); });
+            volumeClass = NSClassFromString(@"MPVolumeView");
+        }
+        if (!volumeClass) {
+            FKLog(@"volume trigger: MPVolumeView unavailable on this system");
+            return;
+        }
+        UIView *view = [[volumeClass alloc] initWithFrame:CGRectMake(-3000, -3000, 120, 32)];
         view.userInteractionEnabled = NO;
         view.alpha = 0.011;      // must stay visible for the slider to update
         view.hidden = NO;

@@ -15,7 +15,6 @@
 #import "FKUtilities.h"
 #import "FKRuntimeKit.h"
 #import "FKToolsPrivate.h"
-#import <WebKit/WebKit.h>
 #import <objc/message.h>
 #import <dlfcn.h>
 #import <mach-o/dyld.h>
@@ -63,12 +62,25 @@ static NSDictionary *FKUtilityWriteJSON(NSDictionary *json, NSString *path) {
 
 #pragma mark - Web inspector
 
-static void FKMakeWebViewInspectable(WKWebView *webView) {
-    if (![FKPrefs boolForKey:@"webInspector" defaultValue:NO]) return;
+static Class FKWebViewClass(void) {
+    static Class cls;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        dlopen("/System/Library/Frameworks/WebKit.framework/WebKit", RTLD_LAZY);
+        cls = NSClassFromString(@"WKWebView");
+    });
+    return cls;
+}
+
+static void FKMakeWebViewInspectable(id webView) {
     if (!webView) return;
+    if (![FKPrefs boolForKey:@"webInspector" defaultValue:NO]) return;
+    Class webViewClass = FKWebViewClass();
+    if (webViewClass && ![webView isKindOfClass:webViewClass]) return;
     if (@available(iOS 16.4, *)) {
-        if ([webView respondsToSelector:@selector(setInspectable:)]) {
-            ((void (*)(id, SEL, BOOL))objc_msgSend)(webView, @selector(setInspectable:), YES);
+        SEL setter = NSSelectorFromString(@"setInspectable:");
+        if ([webView respondsToSelector:setter]) {
+            ((void (*)(id, SEL, BOOL))objc_msgSend)(webView, setter, YES);
             gWebViewsInspectable++;
             return;
         }
@@ -77,7 +89,7 @@ static void FKMakeWebViewInspectable(WKWebView *webView) {
     @try {
         id preferences = [webView valueForKeyPath:@"configuration.preferences"];
         SEL selector = NSSelectorFromString(@"_setDeveloperExtrasEnabled:");
-        if ([preferences respondsToSelector:selector]) {
+        if (preferences && [preferences respondsToSelector:selector]) {
             ((void (*)(id, SEL, BOOL))objc_msgSend)(preferences, selector, YES);
             gWebViewsInspectable++;
         }
@@ -86,52 +98,30 @@ static void FKMakeWebViewInspectable(WKWebView *webView) {
     }
 }
 
-@interface WKWebView (FKForgeKit)
-@end
-
-@implementation WKWebView (FKForgeKit)
-
-- (WKNavigation *)fk_loadRequest:(NSURLRequest *)request {
+// The WKWebView class is resolved at runtime, so these IMPs use id and the
+// Objective-C message ABI instead of a compile-time WKWebView type.
+static void FKWebViewLoadRequest(id self, SEL _cmd, id request) {
     FKMakeWebViewInspectable(self);
-    return [self fk_loadRequest:request];
+    ((id (*)(id, SEL, id))objc_msgSend)(self, NSSelectorFromString(@"fk_loadRequest:"), request);
 }
 
-- (WKNavigation *)fk_loadHTMLString:(NSString *)string baseURL:(NSURL *)baseURL {
+static void FKWebViewLoadHTML(id self, SEL _cmd, id string, id baseURL) {
     FKMakeWebViewInspectable(self);
-    return [self fk_loadHTMLString:string baseURL:baseURL];
+    ((id (*)(id, SEL, id, id))objc_msgSend)(self, NSSelectorFromString(@"fk_loadHTMLString:baseURL:"), string, baseURL);
 }
 
-- (WKNavigation *)fk_loadFileURL:(NSURL *)URL allowingReadAccessToURL:(NSURL *)readAccessURL {
+static void FKWebViewLoadFile(id self, SEL _cmd, id URL, id accessURL) {
     FKMakeWebViewInspectable(self);
-    return [self fk_loadFileURL:URL allowingReadAccessToURL:readAccessURL];
+    ((id (*)(id, SEL, id, id))objc_msgSend)(self, NSSelectorFromString(@"fk_loadFileURL:allowingReadAccessToURL:"), URL, accessURL);
 }
 
-@end
-
-#pragma mark - FLEX gesture
-
-static NSHashTable<UIWindow *> *gFLEXGestureWindows = nil;
-static BOOL gFLEXGestureInstalled = NO;
-static BOOL gFLEXLoaderLoaded = NO;
-
-@interface FKFLEXGestureTarget : NSObject <UIGestureRecognizerDelegate>
-@end
-
-@implementation FKFLEXGestureTarget
-- (void)handleFLEXPress:(UILongPressGestureRecognizer *)gesture {
-    if (gesture.state != UIGestureRecognizerStateBegan) return;
-    if (![FKPrefs boolForKey:@"flexGesture" defaultValue:YES]) return;
-    UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
-    [generator impactOccurred];
-    [FKUtilities showFLEX];
+static void FKSwizzleWKWebViewMethod(Class cls, SEL original, SEL replacement, IMP implementation) {
+    Method method = class_getInstanceMethod(cls, original);
+    if (!method) return;
+    class_addMethod(cls, replacement, implementation, method_getTypeEncoding(method));
+    Method added = class_getInstanceMethod(cls, replacement);
+    if (added) method_exchangeImplementations(method, added);
 }
-- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
-shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)other {
-    return YES;
-}
-@end
-
-static FKFLEXGestureTarget *gFLEXGestureTarget = nil;
 
 #pragma mark - Utilities
 
@@ -162,7 +152,8 @@ static FKFLEXGestureTarget *gFLEXGestureTarget = nil;
 + (NSDictionary *)webInspectorStatus {
     BOOL supported = NO;
     if (@available(iOS 16.4, *)) {
-        supported = [NSClassFromString(@"WKWebView") instancesRespondToSelector:@selector(setInspectable:)];
+        Class webViewClass = FKWebViewClass();
+        supported = webViewClass && [webViewClass instancesRespondToSelector:NSSelectorFromString(@"setInspectable:")];
     }
     return @{ @"enabled": @([FKPrefs boolForKey:@"webInspector" defaultValue:NO]),
               @"swizzle_installed": @(gWebInspectorInstalled),
@@ -188,7 +179,8 @@ static FKFLEXGestureTarget *gFLEXGestureTarget = nil;
 }
 
 + (void)visitWebViews:(UIView *)view {
-    if ([view isKindOfClass:[WKWebView class]]) FKMakeWebViewInspectable((WKWebView *)view);
+    Class webViewClass = FKWebViewClass();
+    if (webViewClass && [view isKindOfClass:webViewClass]) FKMakeWebViewInspectable(view);
     for (UIView *child in view.subviews) [self visitWebViews:child];
 }
 

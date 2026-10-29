@@ -327,7 +327,11 @@ scrolls horizontally when space is tight; the content below is full height.
 ## iOS 27 compatibility
 
 The build uses only public APIs plus the four documented fallback chains (status bar clock,
-volume events, notification class cluster, WebKit inspector). `IOS27-COMPAT.md` inventories
+volume events, notification class cluster, WebKit inspector). WebKit and MediaPlayer are no
+longer linked: both are opened at runtime with `dlopen` and their classes resolved with
+`NSClassFromString`, which removes two hard load-time dependencies and lets the dylib load
+even if either framework is missing or renamed. The dylib now links 13 system libraries
+instead of 15. `IOS27-COMPAT.md` inventories
 every API with its risk and fallback, lists the residual risks, and gives an on-device test
 plan. Two items live in the host app, not the dylib: `NSLocalNetworkUsageDescription` in
 Info.plist and the required-reason entries from `Resources/PrivacyInfo.xcprivacy` merged into
