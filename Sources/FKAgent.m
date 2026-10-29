@@ -13,6 +13,81 @@ static id FKAgentJSONValue(NSData *data) {
     return [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
 }
 
+
+static NSArray<NSDictionary *> *FKAgentProviderList(void) {
+    static NSArray *list;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        list = @[
+            @{ @"id": @"openai", @"name": @"OpenAI",
+               @"endpoint": @"https://api.openai.com/v1/chat/completions",
+               @"default_model": @"gpt-4o-mini",
+               @"fallback_models": @[@"gpt-4o", @"gpt-4o-mini", @"gpt-4.1", @"gpt-4.1-mini", @"o4-mini"] },
+            @{ @"id": @"anthropic", @"name": @"Anthropic (Claude)",
+               @"endpoint": @"https://api.anthropic.com/v1/chat/completions",
+               @"default_model": @"claude-sonnet-4-5",
+               @"headers": @{ @"anthropic-version": @"2023-06-01" },
+               @"fallback_models": @[@"claude-sonnet-4-5", @"claude-opus-4-1", @"claude-haiku-4-5"] },
+            @{ @"id": @"gemini", @"name": @"Google Gemini",
+               @"endpoint": @"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+               @"default_model": @"gemini-2.5-flash",
+               @"fallback_models": @[@"gemini-2.5-pro", @"gemini-2.5-flash", @"gemini-2.0-flash"] },
+            @{ @"id": @"groq", @"name": @"Groq",
+               @"endpoint": @"https://api.groq.com/openai/v1/chat/completions",
+               @"default_model": @"llama-3.3-70b-versatile",
+               @"fallback_models": @[@"llama-3.3-70b-versatile", @"llama-3.1-8b-instant", @"mixtral-8x7b-32768"] },
+            @{ @"id": @"mistral", @"name": @"Mistral",
+               @"endpoint": @"https://api.mistral.ai/v1/chat/completions",
+               @"default_model": @"mistral-large-latest",
+               @"fallback_models": @[@"mistral-large-latest", @"mistral-small-latest", @"codestral-latest"] },
+            @{ @"id": @"deepseek", @"name": @"DeepSeek",
+               @"endpoint": @"https://api.deepseek.com/v1/chat/completions",
+               @"default_model": @"deepseek-chat",
+               @"fallback_models": @[@"deepseek-chat", @"deepseek-reasoner"] },
+            @{ @"id": @"openrouter", @"name": @"OpenRouter",
+               @"endpoint": @"https://openrouter.ai/api/v1/chat/completions",
+               @"default_model": @"openai/gpt-4o-mini",
+               @"headers": @{ @"HTTP-Referer": @"https://forgekit.local", @"X-Title": @"ForgeKit" },
+               @"fallback_models": @[@"openai/gpt-4o-mini", @"anthropic/claude-sonnet-4.5", @"google/gemini-2.5-flash"] },
+            @{ @"id": @"together", @"name": @"Together AI",
+               @"endpoint": @"https://api.together.xyz/v1/chat/completions",
+               @"default_model": @"meta-llama/Llama-3.3-70B-Instruct-Turbo",
+               @"fallback_models": @[@"meta-llama/Llama-3.3-70B-Instruct-Turbo", @"Qwen/Qwen2.5-72B-Instruct-Turbo"] },
+            @{ @"id": @"fireworks", @"name": @"Fireworks AI",
+               @"endpoint": @"https://api.fireworks.ai/inference/v1/chat/completions",
+               @"default_model": @"accounts/fireworks/models/llama-v3p3-70b-instruct",
+               @"fallback_models": @[@"accounts/fireworks/models/llama-v3p3-70b-instruct"] },
+            @{ @"id": @"xai", @"name": @"xAI (Grok)",
+               @"endpoint": @"https://api.x.ai/v1/chat/completions",
+               @"default_model": @"grok-2-latest",
+               @"fallback_models": @[@"grok-2-latest", @"grok-beta"] },
+            @{ @"id": @"perplexity", @"name": @"Perplexity",
+               @"endpoint": @"https://api.perplexity.ai/chat/completions",
+               @"default_model": @"sonar",
+               @"fallback_models": @[@"sonar", @"sonar-pro", @"sonar-reasoning"] },
+            @{ @"id": @"cerebras", @"name": @"Cerebras",
+               @"endpoint": @"https://api.cerebras.ai/v1/chat/completions",
+               @"default_model": @"llama3.3-70b",
+               @"fallback_models": @[@"llama3.3-70b", @"llama3.1-8b"] },
+            @{ @"id": @"ollama", @"name": @"Ollama (local)",
+               @"endpoint": @"http://127.0.0.1:11434/v1/chat/completions",
+               @"default_model": @"llama3.2",
+               @"local": @YES,
+               @"fallback_models": @[@"llama3.2", @"qwen2.5-coder", @"deepseek-r1"] },
+            @{ @"id": @"lmstudio", @"name": @"LM Studio (local)",
+               @"endpoint": @"http://127.0.0.1:1234/v1/chat/completions",
+               @"default_model": @"local-model",
+               @"local": @YES,
+               @"fallback_models": @[@"local-model"] },
+            @{ @"id": @"custom", @"name": @"Custom endpoint",
+               @"endpoint": @"",
+               @"default_model": @"",
+               @"fallback_models": @[] },
+        ];
+    });
+    return list;
+}
+
 static NSString *FKAgentNormalizedEndpoint(NSString *raw) {
     NSString *value = [raw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     if (!value.length) value = @"https://api.openai.com/v1/chat/completions";
@@ -86,6 +161,7 @@ static BOOL FKAgentToolMutates(NSString *name) {
         NSString *toolsJSON = [FKPrefs stringForKey:@"agentEnabledTools" defaultValue:@""];
         NSArray *tools = toolsJSON.length ? FKAgentJSONValue([toolsJSON dataUsingEncoding:NSUTF8StringEncoding]) : nil;
         _enabledTools = [tools isKindOfClass:[NSArray class]] ? tools : @[];
+        _provider = [FKPrefs stringForKey:@"agentProvider" defaultValue:@"openai"];
         _endpoint = FKAgentNormalizedEndpoint([FKPrefs stringForKey:@"agentEndpoint"
                                                             defaultValue:@"https://api.openai.com/v1/chat/completions"]);
         _model = [FKPrefs stringForKey:@"agentModel" defaultValue:@"gpt-4o-mini"];
@@ -132,6 +208,110 @@ static BOOL FKAgentToolMutates(NSString *name) {
         insert[(__bridge id)kSecAttrAccessible] = (__bridge id)kSecAttrAccessibleAfterFirstUnlock;
         SecItemAdd((__bridge CFDictionaryRef)insert, NULL);
     }
+}
+
++ (NSArray<NSDictionary *> *)providers { return FKAgentProviderList(); }
+
++ (NSDictionary *)providerWithIdentifier:(NSString *)identifier {
+    for (NSDictionary *provider in FKAgentProviderList()) {
+        if ([provider[@"id"] isEqualToString:identifier]) return provider;
+    }
+    return nil;
+}
+
+- (void)setProvider:(NSString *)provider {
+    _provider = [provider copy] ?: @"custom";
+    [FKPrefs setString:_provider forKey:@"agentProvider"];
+}
+
+- (void)applyProvider:(NSString *)identifier {
+    NSDictionary *provider = [FKAgent providerWithIdentifier:identifier];
+    if (!provider) return;
+    self.provider = identifier;
+    NSString *endpoint = provider[@"endpoint"];
+    if (endpoint.length) self.endpoint = endpoint;
+    NSString *defaultModel = provider[@"default_model"];
+    if (defaultModel.length) self.model = defaultModel;
+    FKLog(@"agent: provider %@ -> %@ (%@)", provider[@"name"], self.endpoint, self.model);
+}
+
+- (NSDictionary *)providerHeaders {
+    NSDictionary *provider = [FKAgent providerWithIdentifier:self.provider];
+    NSDictionary *headers = provider[@"headers"];
+    return [headers isKindOfClass:[NSDictionary class]] ? headers : @{};
+}
+
+- (NSDictionary *)mergedHeaders {
+    NSMutableDictionary *headers = [[self providerHeaders] mutableCopy];
+    [headers addEntriesFromDictionary:self.extraHeaders ?: @{}];
+    return headers;
+}
+
+- (NSString *)modelsEndpoint {
+    NSString *endpoint = self.endpoint ?: @"";
+    if ([endpoint rangeOfString:@"chat/completions"].location != NSNotFound)
+        return [endpoint stringByReplacingOccurrencesOfString:@"chat/completions" withString:@"models"];
+    if ([endpoint hasSuffix:@"/messages"])
+        return [[endpoint stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"models"];
+    while ([endpoint hasSuffix:@"/"]) endpoint = [endpoint substringToIndex:endpoint.length - 1];
+    if ([endpoint hasSuffix:@"/v1"]) return [endpoint stringByAppendingString:@"/models"];
+    return [endpoint stringByAppendingString:@"/models"];
+}
+
+- (void)fetchModelsWithCompletion:(void (^)(NSArray<NSString *> *, NSError *))completion {
+    NSDictionary *provider = [FKAgent providerWithIdentifier:self.provider];
+    NSArray *fallback = provider[@"fallback_models"];
+    NSString *urlString = self.modelsEndpoint;
+    NSURL *url = [NSURL URLWithString:urlString];
+    if (!url) {
+        completion(fallback ?: @[], [NSError errorWithDomain:@"ForgeKit.Agent" code:10
+                                                   userInfo:@{ NSLocalizedDescriptionKey: @"invalid models endpoint" }]);
+        return;
+    }
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+    request.HTTPMethod = @"GET";
+    request.timeoutInterval = 20;
+    [request setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    NSString *key = [[FKAgent apiKey] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (key.length)
+        [request setValue:[NSString stringWithFormat:@"Bearer %@", key] forHTTPHeaderField:@"Authorization"];
+    for (NSString *header in [self mergedHeaders])
+        [request setValue:[self mergedHeaders][header] forHTTPHeaderField:header];
+
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession]
+        dataTaskWithRequest:request
+        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        NSInteger status = [response isKindOfClass:[NSHTTPURLResponse class]] ? [(NSHTTPURLResponse *)response statusCode] : 0;
+        id json = FKAgentJSONValue(data);
+        NSMutableArray *models = [NSMutableArray array];
+        if ([json isKindOfClass:[NSDictionary class]]) {
+            id list = json[@"data"] ?: json[@"models"];
+            if ([list isKindOfClass:[NSArray class]]) {
+                for (id entry in list) {
+                    if ([entry isKindOfClass:[NSString class]]) [models addObject:entry];
+                    else if ([entry isKindOfClass:[NSDictionary class]])
+                        [models addObject:entry[@"id"] ?: entry[@"name"] ?: @""];
+                }
+            }
+        }
+        [models removeObject:@""];
+        if (models.count) {
+            completion([[NSSet setWithArray:models].allObjects sortedArrayUsingSelector:@selector(compare:)], nil);
+            return;
+        }
+        if (fallback.count) {
+            FKLog(@"agent: model list unavailable (HTTP %ld), using provider defaults", (long)status);
+            completion(fallback, nil);
+            return;
+        }
+        NSString *text = [[NSString alloc] initWithData:data ?: [NSData data] encoding:NSUTF8StringEncoding] ?: @"";
+        if (text.length > 300) text = [[text substringToIndex:300] stringByAppendingString:@"…"];
+        NSString *message = text.length ? [NSString stringWithFormat:@"HTTP %ld: %@", (long)status, text]
+                                        : [NSString stringWithFormat:@"HTTP %ld: no models returned", (long)status];
+        completion(@[], [NSError errorWithDomain:@"ForgeKit.Agent" code:status
+                                       userInfo:@{ NSLocalizedDescriptionKey: message }]);
+    }];
+    [task resume];
 }
 
 - (void)setEndpoint:(NSString *)endpoint {
@@ -336,9 +516,10 @@ static BOOL FKAgentToolMutates(NSString *name) {
     [request setValue:@"ForgeKit/2.3.1" forHTTPHeaderField:@"User-Agent"];
     NSString *key = [[FKAgent apiKey] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     [request setValue:[NSString stringWithFormat:@"Bearer %@", key] forHTTPHeaderField:@"Authorization"];
-    for (NSString *header in self.extraHeaders) {
-        if ([header isKindOfClass:[NSString class]] && [self.extraHeaders[header] isKindOfClass:[NSString class]])
-            [request setValue:self.extraHeaders[header] forHTTPHeaderField:header];
+    for (NSString *header in [self mergedHeaders]) {
+        id value = [self mergedHeaders][header];
+        if ([header isKindOfClass:[NSString class]] && [value isKindOfClass:[NSString class]])
+            [request setValue:value forHTTPHeaderField:header];
     }
     request.HTTPBody = body;
     return request;

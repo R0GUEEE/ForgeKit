@@ -58,6 +58,14 @@ extern char **environ;
                                                 @"filter": str(@"Bundle identifier for the filter plist."),
                                                 @"compile": boolean(@"Try to build with Theos after writing.") },
                               @"required": @[@"name", @"source"], @"additionalProperties": @NO } },
+        @{ @"name": @"agent_models", @"description":
+               @"List models offered by the configured provider (queries the provider's models endpoint, with documented fallbacks).",
+           @"inputSchema": @{ @"type": @"object",
+                              @"properties": @{ @"provider": str(@"Optional provider id to switch to first.") },
+                              @"required": @[], @"additionalProperties": @NO } },
+        @{ @"name": @"agent_providers", @"description":
+               @"List the bundled provider presets with their official endpoints and default models.",
+           @"inputSchema": @{ @"type": @"object", @"properties": @{}, @"required": @[] } },
         @{ @"name": @"agent_tools", @"description":
                @"List tools the agent can call, with read-only/mutating grouping and whether the current profile enables them.",
            @"inputSchema": @{ @"type": @"object", @"properties": @{}, @"required": @[] } },
@@ -288,6 +296,7 @@ extern char **environ;
     }
     if ([name isEqualToString:@"agent_config"]) {
         FKAgent *agent = [FKAgent sharedAgent];
+        if ([args[@"provider"] isKindOfClass:[NSString class]]) [agent applyProvider:args[@"provider"]];
         if ([args[@"endpoint"] isKindOfClass:[NSString class]]) agent.endpoint = args[@"endpoint"];
         if ([args[@"model"] isKindOfClass:[NSString class]]) agent.model = args[@"model"];
         if ([args[@"api_key"] isKindOfClass:[NSString class]]) [FKAgent setAPIKey:args[@"api_key"]];
@@ -314,7 +323,9 @@ extern char **environ;
             [FKPrefs setString:args[@"theos_path"] forKey:@"theosPath"];
         NSString *key = [FKAgent apiKey];
         return @{ @"ok": @YES,
+                  @"provider": agent.provider ?: @"custom",
                   @"endpoint": agent.endpoint ?: @"",
+                  @"models_endpoint": [agent modelsEndpoint],
                   @"model": agent.model ?: @"",
                   @"api_key_set": @(key.length > 0),
                   @"api_key_hint": key.length > 4 ? [NSString stringWithFormat:@"…%@", [key substringFromIndex:key.length - 4]] : @"",
@@ -342,6 +353,31 @@ extern char **environ;
             result[@"extra_files"] = extra[@"written"] ?: @[];
         }
         return result;
+    }
+    if ([name isEqualToString:@"agent_providers"]) {
+        NSMutableArray *providers = [NSMutableArray array];
+        for (NSDictionary *provider in [FKAgent providers]) {
+            [providers addObject:@{ @"id": provider[@"id"] ?: @"",
+                                    @"name": provider[@"name"] ?: @"",
+                                    @"endpoint": provider[@"endpoint"] ?: @"",
+                                    @"default_model": provider[@"default_model"] ?: @"" }];
+        }
+        return @{ @"ok": @YES, @"current": [FKAgent sharedAgent].provider ?: @"custom", @"providers": providers };
+    }
+    if ([name isEqualToString:@"agent_models"]) {
+        FKAgent *agent = [FKAgent sharedAgent];
+        if ([args[@"provider"] isKindOfClass:[NSString class]]) [agent applyProvider:args[@"provider"]];
+        __block NSDictionary *result = nil;
+        dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+        [agent fetchModelsWithCompletion:^(NSArray<NSString *> *models, NSError *error) {
+            result = @{ @"ok": @(error == nil), @"models": models ?: @[],
+                        @"error": error.localizedDescription ?: @"",
+                        @"endpoint": [agent modelsEndpoint],
+                        @"provider": agent.provider ?: @"" };
+            dispatch_semaphore_signal(semaphore);
+        }];
+        dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(25 * NSEC_PER_SEC)));
+        return result ?: @{ @"ok": @NO, @"error": @"model lookup timed out" };
     }
     if ([name isEqualToString:@"agent_tools"])
         return @{ @"ok": @YES, @"tools": [[FKAgent sharedAgent] availableTools] };

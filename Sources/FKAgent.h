@@ -10,6 +10,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 + (instancetype)sharedAgent;
 
+@property (nonatomic, copy) NSString *provider;     // provider identifier
 @property (nonatomic, copy) NSString *endpoint;
 @property (nonatomic, copy) NSString *model;
 @property (nonatomic, assign) BOOL allowMutations;
@@ -29,7 +30,13 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSString *)apiKey;
 + (void)setAPIKey:(nullable NSString *)key;
 
++ (NSArray<NSDictionary *> *)providers;
++ (NSDictionary *)providerWithIdentifier:(NSString *)identifier;
 + (BOOL)toolMutates:(NSString *)name;
+- (void)applyProvider:(NSString *)identifier;
+- (NSString *)modelsEndpoint;
+- (void)fetchModelsWithCompletion:(void (^)(NSArray<NSString *> *_Nullable models,
+                                           NSError *_Nullable error))completion;
 - (NSArray<NSDictionary *> *)availableTools;
 - (void)stop;
 - (void)resetConversation;

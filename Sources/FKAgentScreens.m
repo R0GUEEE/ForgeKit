@@ -269,6 +269,67 @@
     [self presentViewController:alert animated:YES completion:nil];
 }
 
+- (NSString *)providerName {
+    NSDictionary *provider = [FKAgent providerWithIdentifier:[FKAgent sharedAgent].provider];
+    return provider[@"name"] ?: @"Custom endpoint";
+}
+
+- (void)chooseProvider {
+    NSArray *providers = [FKAgent providers];
+    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"Provider"
+                                                                   message:@"Endpoint and default model are filled from the provider's official API."
+                                                            preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSDictionary *provider in providers) {
+        NSString *identifier = provider[@"id"];
+        NSString *title = [identifier isEqualToString:[FKAgent sharedAgent].provider]
+            ? [NSString stringWithFormat:@"✓ %@", provider[@"name"]] : provider[@"name"];
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [[FKAgent sharedAgent] applyProvider:identifier];
+            [self rebuild];
+        }]];
+    }
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    sheet.popoverPresentationController.sourceView = self.view;
+    sheet.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds), 1, 1);
+    [self presentViewController:sheet animated:YES completion:nil];
+}
+
+- (void)chooseModel {
+    FKAgent *agent = [FKAgent sharedAgent];
+    if (![FKAgent apiKey].length) {
+        FKPresentAlert(@"Model list", @"Add an API key first; local providers (Ollama, LM Studio) can be listed without one.");
+    }
+    __weak typeof(self) weakSelf = self;
+    void (^show)(NSArray *) = ^(NSArray *models) {
+        NSMutableArray *rows = [NSMutableArray array];
+        for (NSString *model in models) {
+            [rows addObject:@{ @"title": model,
+                               @"subtitle": [model isEqualToString:agent.model] ? @"current" : @"",
+                               @"check": @([model isEqualToString:agent.model]),
+                               @"action": ^{
+                                   agent.model = model;
+                                   [weakSelf.navigationController popViewControllerAnimated:YES];
+                                   [weakSelf rebuild];
+                               } }];
+            if (rows.count >= 300) break;
+        }
+        if (!rows.count) [rows addObject:@{ @"title": @"No models returned", @"subtitle": @"Enter a model name manually" }];
+        FKListViewController *list = [FKListViewController listWithTitle:@"Models"
+                                                                sections:@[ @{ @"title": [NSString stringWithFormat:@"%lu available", (unsigned long)models.count],
+                                                                               @"rows": rows } ]];
+        [weakSelf.navigationController pushViewController:list animated:YES];
+    };
+    [[FKAgent sharedAgent] fetchModelsWithCompletion:^(NSArray<NSString *> *models, NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (error) {
+                FKPresentAlert(@"Model list", error.localizedDescription);
+                return;
+            }
+            show(models ?: @[]);
+        });
+    }];
+}
+
 - (void)chooseFrom:(NSArray<NSString *> *)options title:(NSString *)title
            current:(NSString *)current handler:(void (^)(NSString *))handler {
     UIAlertController *sheet = [UIAlertController alertControllerWithTitle:title message:nil
@@ -292,11 +353,15 @@
     NSString *key = [FKAgent apiKey];
     self.sections = @[
         @{ @"title": @"Model", @"rows": @[
+            @{ @"title": @"Provider", @"subtitle": [weakSelf providerName], @"chevron": @YES,
+               @"action": ^{ [weakSelf chooseProvider]; } },
             @{ @"title": @"Endpoint", @"subtitle": agent.endpoint ?: @"", @"chevron": @YES,
                @"action": ^{ [weakSelf promptFor:@"Endpoint" value:agent.endpoint ?: @"" secure:NO handler:^(NSString *value) {
                    agent.endpoint = value;
                }]; } },
             @{ @"title": @"Model", @"subtitle": agent.model ?: @"", @"chevron": @YES,
+               @"action": ^{ [weakSelf chooseModel]; } },
+            @{ @"title": @"Enter model manually", @"chevron": @YES,
                @"action": ^{ [weakSelf promptFor:@"Model" value:agent.model ?: @"" secure:NO handler:^(NSString *value) {
                    agent.model = value;
                }]; } },

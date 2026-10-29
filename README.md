@@ -248,7 +248,7 @@ curl -s http://192.168.1.42:8787/mcp \
        "params":{"name":"devkit_selftest","arguments":{}}}'
 ```
 
-### Tools (114)
+### Tools (116)
 
 **Filesystem** — `fs_roots`, `fs_list`, `fs_stat`, `fs_read`, `fs_write`,
 `fs_mkdir`, `fs_delete`, `fs_move`, `fs_copy`, `fs_search`, `fs_chmod`,
@@ -282,8 +282,9 @@ curl -s http://192.168.1.42:8787/mcp \
 
 **Utilities (2)** — `utilities_status`, `web_inspector`
 
-**Agent (8)** — `agent_ask`, `agent_config`, `agent_tools`, `agent_stop`,
-`agent_transcript`, `devkit_build`, `devkit_projects`, `devkit_project`
+**Agent (10)** — `agent_ask`, `agent_config`, `agent_providers`, `agent_models`,
+`agent_tools`, `agent_stop`, `agent_transcript`, `devkit_build`, `devkit_projects`,
+`devkit_project`
 
 **Runtime (17)** — `objc_heap`, `objc_object`, `objc_call`, `objc_ivar_get`,
 `objc_ivar_set`, `view_highlight`, `mem_modules`, `mem_read`, `mem_write`,
@@ -432,6 +433,8 @@ Panel → Agent → ✎   new conversation
 * **Read-only by default.** Writes, patches, hooks, shell and memory writes are refused
   until *Allow mutations* is enabled; the model is told they are disabled so it explains
   instead of retrying.
+* **Providers are presets.** Choosing one sets the official base URL, default model and any
+  required headers (e.g. `anthropic-version`, OpenRouter attribution).
 * **Endpoint is normalised.** `https://api.openai.com`, `…/v1` and a full
   `/v1/chat/completions` URL all resolve to the same request path.
 * **Empty replies are explained.** An empty body now reports the HTTP status and host; a
