@@ -56,10 +56,10 @@ static NSSet<NSValue *> *FKClassRegistry(void) {
         NSMutableSet<NSValue *> *classes = [NSMutableSet set];
         int count = objc_getClassList(NULL, 0);
         if (count <= 0) { registry = classes; return; }
-        Class *list = malloc(sizeof(Class) * (size_t)count);
+        Class *list = (__unsafe_unretained Class *)malloc(sizeof(Class) * (size_t)count);
         if (!list) { registry = classes; return; }
         count = objc_getClassList(list, count);
-        for (int i = 0; i < count; i++) [classes addObject:[NSValue valueWithPointer:list[i]]];
+        for (int i = 0; i < count; i++) [classes addObject:[NSValue valueWithPointer:(__bridge void *)list[i]]];
         free(list);
         registry = classes;
     });
@@ -107,7 +107,7 @@ static void FKHeapRecorder(task_t task, void *baton, unsigned typeMask,
         void *rawISA = *(void **)address;
         if (!rawISA) continue;
         Class isa = (__bridge Class)rawISA;
-        if (![context->classes containsObject:[NSValue valueWithPointer:isa]]) continue;
+        if (![context->classes containsObject:[NSValue valueWithPointer:(__bridge void *)isa]]) continue;
         if (context->target && !FKClassChainContains(isa, context->target)) continue;
         [context->results addObject:@(address)];
     }
