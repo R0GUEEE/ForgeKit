@@ -7,6 +7,27 @@
 #import "FKUtilities.h"
 #import "FKRuntimeKit.h"
 
+static void FKLoadBreadcrumb(NSString *phase) {
+    @try {
+        NSString *documents = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
+        if (!documents.length) return;
+        NSString *directory = [documents stringByAppendingPathComponent:@"ForgeKit"];
+        [[NSFileManager defaultManager] createDirectoryAtPath:directory
+                                  withIntermediateDirectories:YES attributes:nil error:nil];
+        NSString *path = [directory stringByAppendingPathComponent:@"load.log"];
+        NSString *line = [NSString stringWithFormat:@"%@  v%@  %@\n", [NSDate date], FKVersionString, phase];
+        NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:path];
+        if (handle) {
+            [handle seekToEndOfFile];
+            [handle writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
+            [handle closeFile];
+        } else {
+            [line writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        }
+    } @catch (__unused NSException *exception) {
+    }
+}
+
 static void FKInstallGesturesOnAllWindows(void) {
     UIApplication *application = [UIApplication sharedApplication];
     if (!application) return;
@@ -42,7 +63,11 @@ static void FKInstallGesturesOnAllWindows(void) {
 __attribute__((constructor))
 static void FKForgeKitInitialize(void) {
     @autoreleasepool {
-        dispatch_async(dispatch_get_main_queue(), ^{
+        FKLoadBreadcrumb(@"constructor");
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+        @try {
+            FKLoadBreadcrumb(@"setup-start");
             FKSwizzleInstance([UIWindow class], @selector(makeKeyAndVisible), @selector(fk_makeKeyAndVisible));
             FKSwizzleInstance([UIWindow class], @selector(didMoveToWindow), @selector(fk_didMoveToWindow));
 
@@ -84,6 +109,11 @@ static void FKForgeKitInitialize(void) {
                 if (![[FKHTTPServer sharedServer] startOnPort:port error:&error])
                     FKLog(@"autoStart failed: %@", error.localizedDescription);
             }
+            FKLoadBreadcrumb(@"setup-done");
+        } @catch (NSException *exception) {
+            FKLoadBreadcrumb([NSString stringWithFormat:@"setup-exception %@: %@", exception.name, exception.reason]);
+            FKLog(@"ForgeKit setup threw %@", exception);
+        }
         });
     }
 }
