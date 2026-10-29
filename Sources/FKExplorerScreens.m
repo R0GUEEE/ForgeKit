@@ -733,6 +733,22 @@
 }
 @end
 
+@interface FKHeapClassesViewController : UITableViewController
+@end
+@interface FKGlobalsViewController : FKListViewController
+@end
+@interface FKNotificationsViewController : UITableViewController
+@end
+@interface FKWebViewsViewController : UITableViewController
+@end
+@interface FKSQLiteListViewController : UITableViewController
+@end
+@interface FKSQLiteTablesViewController : UITableViewController
++ (instancetype)controllerWithPath:(NSString *)path;
+@end
+@interface FKSystemViewController : FKListViewController
+@end
+
 @interface FKFlexViewController ()
 @property (nonatomic, strong) UINavigationController *moduleNav;
 @property (nonatomic, strong) NSArray<NSDictionary *> *modules;

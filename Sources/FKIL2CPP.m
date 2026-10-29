@@ -529,10 +529,10 @@ static NSArray<NSDictionary *> *FKScanStaticFieldsForClass(Il2CppClass *target, 
             derivedFromUnityObject = gAPI.class_is_subclass_of(klass, unityObject, YES) != 0;
     }
     if (derivedFromUnityObject && gAPI.type_get_object && gAPI.class_get_type) {
-        MethodInfo *method = gAPI.class_get_method_from_name(unityObject, "FindObjectsOfType", 1);
+        MethodInfo *method = (MethodInfo *)(void *)gAPI.class_get_method_from_name(unityObject, "FindObjectsOfType", 1);
         BOOL twoArgs = NO;
         if (!method) {
-            method = gAPI.class_get_method_from_name(unityObject, "FindObjectsByType", 2);
+            method = (MethodInfo *)(void *)gAPI.class_get_method_from_name(unityObject, "FindObjectsByType", 2);
             twoArgs = YES;
         }
         if (method) {
