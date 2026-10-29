@@ -1,0 +1,38 @@
+name: syntax-check
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  objc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+      - name: Fetch iPhoneOS SDK
+        run: |
+          set -eux
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/theos/sdks.git /tmp/sdks
+          cd /tmp/sdks
+          git sparse-checkout set iPhoneOS16.5.sdk
+          ls -d /tmp/sdks/iPhoneOS16.5.sdk
+      - name: Syntax check every source
+        run: |
+          set -eux
+          SDK=/tmp/sdks/iPhoneOS16.5.sdk
+          mkdir -p /tmp/out
+          fail=0
+          for f in Sources/*.m; do
+            echo "== $f"
+            clang -fsyntax-only -target arm64-apple-ios14.0 -isysroot "$SDK" \
+              -fobjc-arc -fblocks -ISources -D__IPHONE_OS_VERSION_MIN_REQUIRED=140000 \
+              -Wno-everything -Werror=implicit-function-declaration \
+              -Werror=incompatible-pointer-types -Werror=objc-method-access \
+              -Werror=return-type "$f" || fail=1
+          done
+          exit $fail
