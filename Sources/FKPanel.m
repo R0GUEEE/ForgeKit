@@ -102,7 +102,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
     [super viewDidLoad];
     self.title = @"ForgeKit";
     self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonItemStyleClose
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonItemStyleDone
                                                                                            target:self
                                                                                            action:@selector(close)];
     self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"gearshape"]
