@@ -446,6 +446,29 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
     return container;
 }
 
+- (void)tileTapped:(FKTileView *)sender {
+    NSInteger index = sender.tag - 200;
+    NSArray *actions = @[@"flex", @"files", @"app", @"defaults", @"keychain", @"runtime", @"server",
+                         @"log", @"device", @"settings", @"unity", @"shell", @"utilities"];
+    if (index < 0 || index >= (NSInteger)actions.count) return;
+    NSString *action = actions[(NSUInteger)index];
+    UIViewController *controller = nil;
+    if ([action isEqualToString:@"flex"]) controller = [[FKFlexViewController alloc] init];
+    else if ([action isEqualToString:@"files"]) controller = [FKFileBrowserViewController browserAtPath:FKContainerPath()];
+    else if ([action isEqualToString:@"defaults"]) controller = [[FKDefaultsViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+    else if ([action isEqualToString:@"keychain"]) controller = [[FKKeychainViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+    else if ([action isEqualToString:@"runtime"]) controller = [[FKRuntimeViewController alloc] init];
+    else if ([action isEqualToString:@"server"]) controller = [[FKServerViewController alloc] init];
+    else if ([action isEqualToString:@"settings"]) controller = [[FKSettingsViewController alloc] init];
+    else if ([action isEqualToString:@"log"]) controller = [FKLogViewController logController];
+    else if ([action isEqualToString:@"app"]) controller = [self appInfoController];
+    else if ([action isEqualToString:@"device"]) controller = [self deviceController];
+    else if ([action isEqualToString:@"unity"]) controller = [[FKUnityViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+    else if ([action isEqualToString:@"shell"]) controller = [[FKShellViewController alloc] init];
+    else if ([action isEqualToString:@"utilities"]) controller = [[FKUtilitiesViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+    if (controller) [self.navigationController pushViewController:controller animated:YES];
+}
+
 - (UIViewController *)appInfoController {
     NSDictionary *info = FKInfoPlist();
     NSMutableArray *identityRows = [NSMutableArray array];

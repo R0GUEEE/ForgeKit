@@ -6,6 +6,33 @@
 
 #pragma mark - FKListViewController
 
+static NSArray<NSDictionary *> *FKCopyBlockSections(NSArray<NSDictionary *> *sections) {
+    if (![sections isKindOfClass:[NSArray class]]) return @[];
+    NSMutableArray *result = [NSMutableArray arrayWithCapacity:sections.count];
+    for (id sectionObject in sections) {
+        if (![sectionObject isKindOfClass:[NSDictionary class]]) continue;
+        NSMutableDictionary *section = [sectionObject mutableCopy];
+        id rowsObject = section[@"rows"];
+        if ([rowsObject isKindOfClass:[NSArray class]]) {
+            NSMutableArray *rows = [NSMutableArray array];
+            for (id rowObject in (NSArray *)rowsObject) {
+                if (![rowObject isKindOfClass:[NSDictionary class]]) continue;
+                NSMutableDictionary *row = [rowObject mutableCopy];
+                // Blocks created in a dictionary literal live on the stack; retaining
+                // them does nothing. Copy them to the heap or calling them later crashes.
+                for (NSString *key in @[@"action", @"toggle"]) {
+                    id value = row[key];
+                    if (value) row[key] = [value copy];
+                }
+                [rows addObject:row];
+            }
+            section[@"rows"] = rows;
+        }
+        [result addObject:section];
+    }
+    return result;
+}
+
 @implementation FKListViewController
 
 + (instancetype)listWithTitle:(NSString *)title sections:(NSArray<NSDictionary *> *)sections {
@@ -13,6 +40,12 @@
     controller.screenTitle = title ?: @"";
     controller.sections = sections ?: @[];
     return controller;
+}
+
+@synthesize sections = _sections;
+
+- (void)setSections:(NSArray<NSDictionary *> *)sections {
+    _sections = FKCopyBlockSections(sections);
 }
 
 - (void)viewDidLoad {

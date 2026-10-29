@@ -861,6 +861,14 @@
         @{ @"title": @"System", @"symbol": @"gearshape.2.fill", @"make": ^{ return [[FKSystemViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]; } },
     ];
 
+    NSMutableArray *copiedEntries = [NSMutableArray arrayWithCapacity:self.entries.count];
+    for (NSDictionary *entry in self.entries) {
+        NSMutableDictionary *copy = [entry mutableCopy];
+        if (entry[@"make"]) copy[@"make"] = [entry[@"make"] copy];
+        [copiedEntries addObject:copy];
+    }
+    self.entries = copiedEntries;
+
     self.moduleButtons = [NSMutableArray array];
     for (NSUInteger i = 0; i < self.entries.count; i++) {
         NSDictionary *entry = self.entries[i];
