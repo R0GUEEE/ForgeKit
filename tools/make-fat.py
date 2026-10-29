@@ -32,9 +32,9 @@ for cpu, sub, data in slices:
 out_data = bytearray(struct.pack('>II', 0xCAFEBABE, len(slices)))
 for cpu, sub, off, size, align in arch_entries:
     out_data += struct.pack('>IIIII', cpu, sub, off, size, align)
-out_data += b'\\0' * (arch_entries[0][2] - len(out_data))
+out_data += bytes(arch_entries[0][2] - len(out_data))
 for (cpu, sub, off, size, align), (_, _, data) in zip(arch_entries, slices):
     out_data += data
-    out_data += b'\\0' * (((len(out_data) + ALIGN - 1) // ALIGN * ALIGN) - len(out_data))
+    out_data += bytes(((len(out_data) + ALIGN - 1) // ALIGN * ALIGN) - len(out_data))
 open(out, 'wb').write(out_data)
 print('wrote', out, len(out_data), 'bytes,', len(slices), 'slices')
