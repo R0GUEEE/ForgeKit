@@ -40,9 +40,15 @@
 
 - (void)layoutSubviews {
     [super layoutSubviews];
-    CGFloat side = 44;
-    self.iconView.frame = CGRectMake((self.bounds.size.width - side) / 2, 8, side, side);
-    self.titleLabel.frame = CGRectMake(2, 58, self.bounds.size.width - 4, self.bounds.size.height - 60);
+    CGFloat labelHeight = 26;
+    CGFloat available = self.bounds.size.height - labelHeight - 12;
+    CGFloat side = MIN(MIN(self.bounds.size.width - 16, available), (CGFloat)46);
+    side = MAX(side, 20);
+    self.iconView.frame = CGRectMake((self.bounds.size.width - side) / 2, 6, side, side);
+    self.iconView.layer.cornerRadius = MAX(6, side * 0.28);
+    self.titleLabel.frame = CGRectMake(2, CGRectGetMaxY(self.iconView.frame) + 2,
+                                       self.bounds.size.width - 4,
+                                       self.bounds.size.height - CGRectGetMaxY(self.iconView.frame) - 2);
 }
 
 - (void)setHighlighted:(BOOL)highlighted {
@@ -96,7 +102,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
     [super viewDidLoad];
     self.title = @"ForgeKit";
     self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemClose
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonItemStyleClose
                                                                                            target:self
                                                                                            action:@selector(close)];
     self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"gearshape"]
@@ -104,41 +110,41 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
                                                                            target:self
                                                                            action:@selector(openSettings)];
 
-    UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:self.view.bounds];
-    scroll.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    scroll.alwaysBounceVertical = YES;
-    scroll.contentInset = UIEdgeInsetsMake(12, 14, 28, 14);
-    [self.view addSubview:scroll];
-
-    UIStackView *stack = [[UIStackView alloc] initWithFrame:CGRectMake(14, 12, self.view.bounds.size.width - 28, 0)];
-    stack.axis = UILayoutConstraintAxisVertical;
-    stack.spacing = 12;
-    stack.translatesAutoresizingMaskIntoConstraints = NO;
-    [scroll addSubview:stack];
+    UIStackView *root = [[UIStackView alloc] init];
+    root.axis = UILayoutConstraintAxisVertical;
+    root.spacing = 10;
+    root.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:root];
+    UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
-        [stack.leadingAnchor constraintEqualToAnchor:scroll.leadingAnchor constant:14],
-        [stack.trailingAnchor constraintEqualToAnchor:scroll.trailingAnchor constant:-14],
-        [stack.topAnchor constraintEqualToAnchor:scroll.topAnchor constant:12],
-        [stack.bottomAnchor constraintEqualToAnchor:scroll.bottomAnchor constant:-28],
-        [stack.widthAnchor constraintEqualToAnchor:scroll.widthAnchor constant:-28],
+        [root.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:12],
+        [root.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-12],
+        [root.topAnchor constraintEqualToAnchor:safe.topAnchor constant:8],
+        [root.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor constant:-8],
     ]];
 
-    [stack addArrangedSubview:[self headerCard]];
-    [stack addArrangedSubview:[self tileGrid]];
-    [stack addArrangedSubview:[self footerCard]];
+    UIView *header = [self headerCard];
+    [root addArrangedSubview:header];
+    [header.heightAnchor constraintEqualToConstant:84].active = YES;
+
+    UIStackView *grid = (UIStackView *)[self tileGrid];
+    [grid setContentHuggingPriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisVertical];
+    [root addArrangedSubview:grid];
+
+    UIView *footer = [self footerCard];
+    [root addArrangedSubview:footer];
+    [footer.heightAnchor constraintEqualToConstant:16].active = YES;
 }
 
 - (UIView *)headerCard {
     UIView *card = [[UIView alloc] init];
     card.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
-    card.layer.cornerRadius = 16;
+    card.layer.cornerRadius = 14;
     card.layer.cornerCurve = kCACornerCurveContinuous;
-    card.translatesAutoresizingMaskIntoConstraints = NO;
-    [card.heightAnchor constraintGreaterThanOrEqualToConstant:96].active = YES;
 
     UIImageView *icon = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"AppIcon60x60"] ?: [UIImage systemImageNamed:@"app.fill"]];
     icon.contentMode = UIViewContentModeScaleAspectFit;
-    icon.layer.cornerRadius = 12;
+    icon.layer.cornerRadius = 10;
     icon.layer.cornerCurve = kCACornerCurveContinuous;
     icon.clipsToBounds = YES;
     icon.tintColor = [UIColor systemOrangeColor];
@@ -147,16 +153,18 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
 
     UILabel *name = [[UILabel alloc] init];
     name.text = FKAppName();
-    name.font = [UIFont systemFontOfSize:18 weight:UIFontWeightBold];
+    name.font = [UIFont systemFontOfSize:16 weight:UIFontWeightBold];
+    name.adjustsFontSizeToFitWidth = YES;
+    name.minimumScaleFactor = 0.7;
     name.translatesAutoresizingMaskIntoConstraints = NO;
     [card addSubview:name];
 
     UILabel *identifier = [[UILabel alloc] init];
     identifier.text = [NSString stringWithFormat:@"%@ · %@", FKAppIdentifier(), FKAppVersion()];
-    identifier.font = [UIFont monospacedSystemFontOfSize:9 weight:UIFontWeightRegular];
+    identifier.font = [UIFont monospacedSystemFontOfSize:8 weight:UIFontWeightRegular];
     identifier.textColor = [UIColor secondaryLabelColor];
     identifier.adjustsFontSizeToFitWidth = YES;
-    identifier.minimumScaleFactor = 0.7;
+    identifier.minimumScaleFactor = 0.6;
     identifier.translatesAutoresizingMaskIntoConstraints = NO;
     [card addSubview:identifier];
 
@@ -166,31 +174,32 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
     badges.translatesAutoresizingMaskIntoConstraints = NO;
     [badges addArrangedSubview:FKMakeBadge(FKIsJailbroken() ? @"JAILBROKEN" : @"SANDBOXED",
                                            FKIsJailbroken() ? [UIColor systemGreenColor] : [UIColor systemOrangeColor])];
-    [badges addArrangedSubview:FKMakeBadge([NSString stringWithFormat:@"iOS %@", FKOSVersionString()], [UIColor systemBlueColor])];
-    [badges addArrangedSubview:FKMakeBadge(@"MCP", [UIColor systemPurpleColor])];
+    [badges addArrangedSubview:FKMakeBadge([NSString stringWithFormat:@"iOS %@", FKOSVersionString()],
+                                           [UIColor systemBlueColor])];
     [card addSubview:badges];
 
     [NSLayoutConstraint activateConstraints:@[
-        [icon.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:14],
-        [icon.topAnchor constraintEqualToAnchor:card.topAnchor constant:14],
-        [icon.widthAnchor constraintEqualToConstant:52],
-        [icon.heightAnchor constraintEqualToConstant:52],
-        [name.leadingAnchor constraintEqualToAnchor:icon.trailingAnchor constant:12],
-        [name.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-14],
-        [name.topAnchor constraintEqualToAnchor:card.topAnchor constant:16],
+        [icon.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:12],
+        [icon.topAnchor constraintEqualToAnchor:card.topAnchor constant:10],
+        [icon.widthAnchor constraintEqualToConstant:38],
+        [icon.heightAnchor constraintEqualToConstant:38],
+        [name.leadingAnchor constraintEqualToAnchor:icon.trailingAnchor constant:10],
+        [name.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-12],
+        [name.topAnchor constraintEqualToAnchor:card.topAnchor constant:12],
         [identifier.leadingAnchor constraintEqualToAnchor:name.leadingAnchor],
-        [identifier.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-14],
-        [identifier.topAnchor constraintEqualToAnchor:name.bottomAnchor constant:3],
-        [badges.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:14],
-        [badges.topAnchor constraintEqualToAnchor:icon.bottomAnchor constant:12],
-        [badges.bottomAnchor constraintEqualToAnchor:card.bottomAnchor constant:-12],
-        [badges.heightAnchor constraintEqualToConstant:20],
+        [identifier.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-12],
+        [identifier.topAnchor constraintEqualToAnchor:name.bottomAnchor constant:2],
+        [badges.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:12],
+        [badges.topAnchor constraintEqualToAnchor:icon.bottomAnchor constant:6],
+        [badges.bottomAnchor constraintEqualToAnchor:card.bottomAnchor constant:-8],
+        [badges.heightAnchor constraintEqualToConstant:18],
     ]];
     return card;
 }
 
 - (UIView *)tileGrid {
     NSArray *tiles = @[
+        @{ @"title": @"Explorer", @"symbol": @"square.grid.2x2.fill", @"tint": [UIColor systemRedColor], @"action": @"explorer" },
         @{ @"title": @"Files", @"symbol": @"folder.fill", @"tint": [UIColor systemBlueColor], @"action": @"files" },
         @{ @"title": @"App", @"symbol": @"shippingbox.fill", @"tint": [UIColor systemOrangeColor], @"action": @"app" },
         @{ @"title": @"Defaults", @"symbol": @"slider.horizontal.3", @"tint": [UIColor systemTealColor], @"action": @"defaults" },
@@ -204,69 +213,67 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
         @{ @"title": @"Shell", @"symbol": @"terminal.fill", @"tint": [UIColor systemGreenColor], @"action": @"shell" },
         @{ @"title": @"Utilities", @"symbol": @"wrench.and.screwdriver.fill", @"tint": [UIColor systemGrayColor], @"action": @"utilities" },
     ];
-
+    NSInteger columns = 4;
+    NSInteger rows = ((NSInteger)tiles.count + columns - 1) / columns;
     UIStackView *grid = [[UIStackView alloc] init];
     grid.axis = UILayoutConstraintAxisVertical;
-    grid.spacing = 10;
-    NSMutableArray *rowStack = nil;
-    for (NSUInteger i = 0; i < tiles.count; i++) {
-        if (i % 3 == 0) {
-            rowStack = [NSMutableArray array];
-            UIStackView *row = [[UIStackView alloc] init];
-            row.axis = UILayoutConstraintAxisHorizontal;
-            row.spacing = 8;
-            row.distribution = UIStackViewDistributionFillEqually;
-            row.tag = 100 + (NSInteger)(i / 3);
-            [grid addArrangedSubview:row];
+    grid.spacing = 8;
+    grid.distribution = UIStackViewDistributionFillEqually;
+    grid.translatesAutoresizingMaskIntoConstraints = NO;
+    for (NSInteger row = 0; row < rows; row++) {
+        UIStackView *rowStack = [[UIStackView alloc] init];
+        rowStack.axis = UILayoutConstraintAxisHorizontal;
+        rowStack.spacing = 8;
+        rowStack.distribution = UIStackViewDistributionFillEqually;
+        for (NSInteger column = 0; column < columns; column++) {
+            NSInteger index = row * columns + column;
+            if (index < (NSInteger)tiles.count) {
+                NSDictionary *info = tiles[(NSUInteger)index];
+                FKTileView *tile = [FKTileView tileWithTitle:info[@"title"] symbol:info[@"symbol"] tint:info[@"tint"]];
+                tile.tag = 200 + index;
+                [tile addTarget:self action:@selector(tileTapped:) forControlEvents:UIControlEventTouchUpInside];
+                [rowStack addArrangedSubview:tile];
+            } else {
+                UIView *placeholder = [[UIView alloc] init];
+                placeholder.userInteractionEnabled = NO;
+                placeholder.backgroundColor = [UIColor clearColor];
+                [rowStack addArrangedSubview:placeholder];
+            }
         }
-        UIStackView *row = grid.arrangedSubviews.lastObject;
-        NSDictionary *info = tiles[i];
-        NSString *action = info[@"action"];
-        FKTileView *tile = [FKTileView tileWithTitle:info[@"title"] symbol:info[@"symbol"] tint:info[@"tint"]];
-        tile.tag = 200 + (NSInteger)i;
-        [tile addTarget:self action:@selector(tileTapped:) forControlEvents:UIControlEventTouchUpInside];
-        [tile.heightAnchor constraintEqualToConstant:96].active = YES;
-        [row addArrangedSubview:tile];
-        (void)rowStack;
-        (void)action;
+        [grid addArrangedSubview:rowStack];
     }
     return grid;
 }
 
 - (UIView *)footerCard {
-    UIView *card = [[UIView alloc] init];
-    card.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
-    card.layer.cornerRadius = 16;
-    card.layer.cornerCurve = kCACornerCurveContinuous;
-
+    UIView *container = [[UIView alloc] init];
     UILabel *hint = [[UILabel alloc] init];
-    hint.numberOfLines = 0;
-    hint.font = [UIFont systemFontOfSize:11];
-    hint.textColor = [UIColor secondaryLabelColor];
-    NSString *port = [NSString stringWithFormat:@"%ld", (long)[FKPrefs integerForKey:@"port" defaultValue:8787]];
-    hint.text = [NSString stringWithFormat:
-                 @"Long-press the time in the status bar, or press volume up then down.\n"
-                 @"MCP endpoint: http://%@:%@/mcp\n"
-                 @"Dashboard: http://%@:%@/?token=%@",
-                 FKLanAddress(), port, FKLanAddress(), port, [FKPrefs token]];
+    hint.text = [NSString stringWithFormat:@"clock hold · volume up/down · MCP :%ld",
+                 (long)[FKPrefs integerForKey:@"port" defaultValue:8787]];
+    hint.font = [UIFont monospacedSystemFontOfSize:8.5 weight:UIFontWeightRegular];
+    hint.textColor = [UIColor tertiaryLabelColor];
+    hint.textAlignment = NSTextAlignmentCenter;
+    hint.adjustsFontSizeToFitWidth = YES;
+    hint.minimumScaleFactor = 0.7;
     hint.translatesAutoresizingMaskIntoConstraints = NO;
-    [card addSubview:hint];
+    [container addSubview:hint];
     [NSLayoutConstraint activateConstraints:@[
-        [hint.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:14],
-        [hint.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-14],
-        [hint.topAnchor constraintEqualToAnchor:card.topAnchor constant:12],
-        [hint.bottomAnchor constraintEqualToAnchor:card.bottomAnchor constant:-12],
+        [hint.leadingAnchor constraintEqualToAnchor:container.leadingAnchor],
+        [hint.trailingAnchor constraintEqualToAnchor:container.trailingAnchor],
+        [hint.centerYAnchor constraintEqualToAnchor:container.centerYAnchor],
     ]];
-    return card;
+    return container;
 }
 
 - (void)tileTapped:(FKTileView *)sender {
     NSInteger index = sender.tag - 200;
-    NSArray *actions = @[@"files", @"app", @"defaults", @"keychain", @"runtime", @"server", @"log", @"device", @"settings", @"unity", @"shell", @"utilities"];
+    NSArray *actions = @[@"explorer", @"files", @"app", @"defaults", @"keychain", @"runtime", @"server",
+                         @"log", @"device", @"settings", @"unity", @"shell", @"utilities"];
     if (index < 0 || index >= (NSInteger)actions.count) return;
     NSString *action = actions[(NSUInteger)index];
     UIViewController *controller = nil;
-    if ([action isEqualToString:@"files"]) controller = [FKFileBrowserViewController browserAtPath:FKContainerPath()];
+    if ([action isEqualToString:@"explorer"]) controller = [[FKExplorerViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+    else if ([action isEqualToString:@"files"]) controller = [FKFileBrowserViewController browserAtPath:FKContainerPath()];
     else if ([action isEqualToString:@"defaults"]) controller = [[FKDefaultsViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
     else if ([action isEqualToString:@"keychain"]) controller = [[FKKeychainViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
     else if ([action isEqualToString:@"runtime"]) controller = [[FKRuntimeViewController alloc] init];

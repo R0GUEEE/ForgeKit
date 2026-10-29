@@ -34,3 +34,6 @@
 
 @interface FKUtilitiesViewController : FKListViewController
 @end
+
+@interface FKExplorerViewController : FKListViewController
+@end
