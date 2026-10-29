@@ -61,10 +61,11 @@ static void FKInstallGesturesOnAllWindows(void) {
 
 @end
 
-__attribute__((constructor))
-static void FKForgeKitInitialize(void) {
+static void FKForgeKitStart(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
     @autoreleasepool {
-        FKLoadBreadcrumb(@"constructor");
+        FKLoadBreadcrumb(@"start");
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
         @try {
@@ -117,4 +118,19 @@ static void FKForgeKitInitialize(void) {
         }
         });
     }
+    });
 }
+
+__attribute__((constructor))
+static void FKForgeKitConstructor(void) {
+    FKForgeKitStart();
+}
+
+// lld can place __mod_init_func in __DATA_CONST, which some dyld versions do not
+// scan for initializers. ObjC +load is called from __objc_classlist and is immune
+// to that placement, so both paths start the same once-guarded setup.
+@interface FKForgeKitLoader : NSObject
+@end
+@implementation FKForgeKitLoader
++ (void)load { FKForgeKitStart(); }
+@end
