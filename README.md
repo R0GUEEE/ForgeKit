@@ -359,7 +359,10 @@ Dark dashboard with a gradient header (app icon, name, bundle id, live
 `MCP :port · N tools` status), four quick-action pills (start/stop MCP, traffic capture,
 WebKit inspector, flash view frames) and a compact footer.
 
-The grid is now **nine tiles in three columns**, one per distinct capability:
+The layout is deliberately compact: a 70 pt header, a 42 pt quick-action row, then nine
+tiles in three columns at a fixed **58 pt** row height — each tile sized to its 26 pt icon
+plus a single 9 pt label, with no vertical stretching. A flexible spacer keeps the footer
+at the bottom instead of stretching the grid.
 
 | Tile | Purpose |
 |---|---|

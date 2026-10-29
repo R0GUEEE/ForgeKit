@@ -26,10 +26,10 @@
     tile.iconView.contentMode = UIViewContentModeScaleAspectFit;
     tile.iconView.tintColor = tint;
     tile.iconView.backgroundColor = [tint colorWithAlphaComponent:0.18];
-    tile.iconView.layer.cornerRadius = 12;
+    tile.iconView.layer.cornerRadius = 7;
     tile.iconView.layer.cornerCurve = kCACornerCurveContinuous;
     tile.backgroundColor = [UIColor colorWithWhite:1 alpha:0.055];
-    tile.layer.cornerRadius = 16;
+    tile.layer.cornerRadius = 12;
     tile.layer.cornerCurve = kCACornerCurveContinuous;
     tile.layer.borderWidth = 1;
     tile.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.07].CGColor;
@@ -38,7 +38,7 @@
 
     tile.titleLabel = [[UILabel alloc] init];
     tile.titleLabel.text = title;
-    tile.titleLabel.font = [UIFont systemFontOfSize:9.5 weight:UIFontWeightMedium];
+    tile.titleLabel.font = [UIFont systemFontOfSize:9 weight:UIFontWeightMedium];
     tile.titleLabel.textColor = [UIColor colorWithWhite:1 alpha:0.88];
     tile.titleLabel.textAlignment = NSTextAlignmentCenter;
     tile.titleLabel.numberOfLines = 2;
@@ -48,15 +48,12 @@
 
 - (void)layoutSubviews {
     [super layoutSubviews];
-    CGFloat labelHeight = 26;
-    CGFloat available = self.bounds.size.height - labelHeight - 12;
-    CGFloat side = MIN(MIN(self.bounds.size.width - 16, available), (CGFloat)46);
-    side = MAX(side, 20);
-    self.iconView.frame = CGRectMake((self.bounds.size.width - side) / 2, 6, side, side);
-    self.iconView.layer.cornerRadius = MAX(6, side * 0.28);
+    CGFloat side = MIN(MIN(self.bounds.size.width - 18, (CGFloat)26), self.bounds.size.height - 30);
+    side = MAX(side, 18);
+    self.iconView.frame = CGRectMake((self.bounds.size.width - side) / 2, 7, side, side);
+    self.iconView.layer.cornerRadius = MAX(5, side * 0.26);
     self.titleLabel.frame = CGRectMake(2, CGRectGetMaxY(self.iconView.frame) + 2,
-                                       self.bounds.size.width - 4,
-                                       self.bounds.size.height - CGRectGetMaxY(self.iconView.frame) - 2);
+                                       self.bounds.size.width - 4, 15);
 }
 
 - (void)setHighlighted:(BOOL)highlighted {
@@ -121,7 +118,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
     self = [super initWithFrame:frame];
     if (self) {
         self.backgroundColor = [UIColor colorWithWhite:1 alpha:0.06];
-        self.layer.cornerRadius = 14;
+        self.layer.cornerRadius = 10;
         self.layer.cornerCurve = kCACornerCurveContinuous;
         self.layer.borderWidth = 1;
         self.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.08].CGColor;
@@ -129,7 +126,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
         _iconView.contentMode = UIViewContentModeScaleAspectFit;
         [self addSubview:_iconView];
         _titleLabel = [[UILabel alloc] init];
-        _titleLabel.font = [UIFont systemFontOfSize:9 weight:UIFontWeightSemibold];
+        _titleLabel.font = [UIFont systemFontOfSize:8.5 weight:UIFontWeightSemibold];
         _titleLabel.textColor = [UIColor colorWithWhite:1 alpha:0.85];
         _titleLabel.textAlignment = NSTextAlignmentCenter;
         _titleLabel.adjustsFontSizeToFitWidth = YES;
@@ -148,8 +145,8 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
 }
 - (void)layoutSubviews {
     [super layoutSubviews];
-    self.iconView.frame = CGRectMake((self.bounds.size.width - 18) / 2, 9, 18, 18);
-    self.titleLabel.frame = CGRectMake(2, 30, self.bounds.size.width - 4, self.bounds.size.height - 32);
+    self.iconView.frame = CGRectMake((self.bounds.size.width - 15) / 2, 5, 15, 15);
+    self.titleLabel.frame = CGRectMake(2, 21, self.bounds.size.width - 4, 14);
 }
 - (void)setHighlighted:(BOOL)highlighted {
     [super setHighlighted:highlighted];
@@ -178,7 +175,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
 
     UIStackView *root = [[UIStackView alloc] init];
     root.axis = UILayoutConstraintAxisVertical;
-    root.spacing = 9;
+    root.spacing = 7;
     root.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:root];
     UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
@@ -191,19 +188,24 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
 
     UIView *header = [self headerCard];
     [root addArrangedSubview:header];
-    [header.heightAnchor constraintEqualToConstant:88].active = YES;
+    [header.heightAnchor constraintEqualToConstant:70].active = YES;
 
     UIView *quick = [self quickActionsRow];
     [root addArrangedSubview:quick];
-    [quick.heightAnchor constraintEqualToConstant:58].active = YES;
+    [quick.heightAnchor constraintEqualToConstant:42].active = YES;
 
     UIStackView *grid = (UIStackView *)[self tileGrid];
     [grid setContentHuggingPriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisVertical];
     [root addArrangedSubview:grid];
 
+    UIView *spacer = [[UIView alloc] init];
+    spacer.userInteractionEnabled = NO;
+    [spacer setContentHuggingPriority:UILayoutPriorityFittingSizeLevel forAxis:UILayoutConstraintAxisVertical];
+    [root addArrangedSubview:spacer];
+
     UIView *footer = [self footerCard];
     [root addArrangedSubview:footer];
-    [footer.heightAnchor constraintEqualToConstant:14].active = YES;
+    [footer.heightAnchor constraintEqualToConstant:12].active = YES;
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(refreshStatus)
                                                  name:FKServerDidChangeNotification object:nil];
@@ -241,7 +243,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
     icon.contentMode = UIViewContentModeScaleAspectFit;
     icon.tintColor = [UIColor whiteColor];
     icon.backgroundColor = [UIColor colorWithWhite:1 alpha:0.18];
-    icon.layer.cornerRadius = 11;
+    icon.layer.cornerRadius = 9;
     icon.layer.cornerCurve = kCACornerCurveContinuous;
     icon.clipsToBounds = YES;
     icon.translatesAutoresizingMaskIntoConstraints = NO;
@@ -249,7 +251,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
 
     UILabel *name = [[UILabel alloc] init];
     name.text = FKAppName();
-    name.font = [UIFont systemFontOfSize:17 weight:UIFontWeightBold];
+    name.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
     name.textColor = [UIColor whiteColor];
     name.adjustsFontSizeToFitWidth = YES;
     name.minimumScaleFactor = 0.7;
@@ -258,7 +260,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
 
     UILabel *identifier = [[UILabel alloc] init];
     identifier.text = [NSString stringWithFormat:@"%@ · %@", FKAppIdentifier(), FKAppVersion()];
-    identifier.font = [UIFont monospacedSystemFontOfSize:8 weight:UIFontWeightRegular];
+    identifier.font = [UIFont monospacedSystemFontOfSize:7.5 weight:UIFontWeightRegular];
     identifier.textColor = [UIColor colorWithWhite:1 alpha:0.75];
     identifier.adjustsFontSizeToFitWidth = YES;
     identifier.minimumScaleFactor = 0.6;
@@ -284,23 +286,23 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
     [card addSubview:badges];
 
     [NSLayoutConstraint activateConstraints:@[
-        [icon.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:13],
-        [icon.topAnchor constraintEqualToAnchor:card.topAnchor constant:11],
-        [icon.widthAnchor constraintEqualToConstant:40],
-        [icon.heightAnchor constraintEqualToConstant:40],
+        [icon.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:11],
+        [icon.topAnchor constraintEqualToAnchor:card.topAnchor constant:9],
+        [icon.widthAnchor constraintEqualToConstant:32],
+        [icon.heightAnchor constraintEqualToConstant:32],
         [name.leadingAnchor constraintEqualToAnchor:icon.trailingAnchor constant:10],
-        [name.topAnchor constraintEqualToAnchor:card.topAnchor constant:13],
+        [name.topAnchor constraintEqualToAnchor:card.topAnchor constant:10],
         [name.trailingAnchor constraintLessThanOrEqualToAnchor:self.statusLabel.leadingAnchor constant:-8],
         [identifier.leadingAnchor constraintEqualToAnchor:name.leadingAnchor],
         [identifier.topAnchor constraintEqualToAnchor:name.bottomAnchor constant:2],
         [identifier.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-13],
         [self.statusLabel.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-13],
-        [self.statusLabel.topAnchor constraintEqualToAnchor:card.topAnchor constant:14],
+        [self.statusLabel.topAnchor constraintEqualToAnchor:card.topAnchor constant:11],
         [self.statusLabel.widthAnchor constraintGreaterThanOrEqualToConstant:90],
         [badges.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:13],
-        [badges.topAnchor constraintEqualToAnchor:icon.bottomAnchor constant:7],
-        [badges.bottomAnchor constraintEqualToAnchor:card.bottomAnchor constant:-9],
-        [badges.heightAnchor constraintEqualToConstant:18],
+        [badges.topAnchor constraintGreaterThanOrEqualToAnchor:icon.bottomAnchor constant:3],
+        [badges.bottomAnchor constraintEqualToAnchor:card.bottomAnchor constant:-8],
+        [badges.heightAnchor constraintEqualToConstant:15],
     ]];
     return card;
 }
@@ -394,13 +396,13 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
     NSInteger rows = ((NSInteger)tiles.count + columns - 1) / columns;
     UIStackView *grid = [[UIStackView alloc] init];
     grid.axis = UILayoutConstraintAxisVertical;
-    grid.spacing = 8;
+    grid.spacing = 6;
     grid.distribution = UIStackViewDistributionFillEqually;
     grid.translatesAutoresizingMaskIntoConstraints = NO;
     for (NSInteger row = 0; row < rows; row++) {
         UIStackView *rowStack = [[UIStackView alloc] init];
         rowStack.axis = UILayoutConstraintAxisHorizontal;
-        rowStack.spacing = 8;
+        rowStack.spacing = 6;
         rowStack.distribution = UIStackViewDistributionFillEqually;
         for (NSInteger column = 0; column < columns; column++) {
             NSInteger index = row * columns + column;
@@ -416,6 +418,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
                 [rowStack addArrangedSubview:placeholder];
             }
         }
+        [rowStack.heightAnchor constraintEqualToConstant:58].active = YES;
         [grid addArrangedSubview:rowStack];
     }
     return grid;
