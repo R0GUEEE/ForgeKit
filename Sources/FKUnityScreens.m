@@ -50,7 +50,7 @@
                           found[@"strategy"] ?: @""],
             @"chevron": @YES,
             @"action": ^{
-                FKListViewController *details =
+                UIViewController *details =
                     [self objectControllerForClass:object[@"class"] ?: self.className pointer:pointer];
                 [self.navigationController pushViewController:details animated:YES];
             },
@@ -77,7 +77,7 @@
                 NSDictionary *child = field[@"value"];
                 unsigned long long childPointer = [child[@"ptr"] unsignedLongLongValue];
                 if (!childPointer) return;
-                FKListViewController *next = [self objectControllerForClass:child[@"class"] ?: @""
+                UIViewController *next = [self objectControllerForClass:child[@"class"] ?: @""
                                                                     pointer:childPointer];
                 [self.navigationController pushViewController:next animated:YES];
             },

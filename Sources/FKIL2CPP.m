@@ -663,11 +663,11 @@ static MethodInfo *FKFindMethod(Il2CppClass *klass, NSString *methodName, NSInte
         const char *name = gAPI.method_get_name(method);
         if (!name) continue;
         if (![methodName isEqualToString:[NSString stringWithUTF8String:name]]) continue;
-        if (index == overload) return (MethodInfo *)method;
+        if (index == overload) return (MethodInfo *)(void *)method;
         index++;
     }
     if (overload <= 0 && gAPI.class_get_method_from_name) {
-        MethodInfo *byName = (MethodInfo *)gAPI.class_get_method_from_name(klass, methodName.UTF8String, -1);
+        MethodInfo *byName = (MethodInfo *)(void *)gAPI.class_get_method_from_name(klass, methodName.UTF8String, -1);
         if (byName) return byName;
     }
     return NULL;

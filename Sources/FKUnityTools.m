@@ -4,6 +4,7 @@
 
 #import "ForgeKit.h"
 #import "FKIL2CPP.h"
+#import "FKToolsPrivate.h"
 #import <JavaScriptCore/JavaScriptCore.h>
 
 #pragma mark - Script engine
