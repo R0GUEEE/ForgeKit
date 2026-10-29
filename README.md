@@ -28,6 +28,7 @@ Built binary: `ForgeKit.dylib` — arm64 + arm64e, iOS 14.0+, 932,912 bytes.
 | App introspection | Info.plist, entitlements from the code signature and embedded profile, URL schemes, Mach-O dependencies/rpaths for the app, Frameworks and PlugIns, loaded images, keychain items, HTTP cookies. |
 | Runtime | JavaScriptCore console with `fk.*` filesystem bridge; ObjC class listing and class introspection (methods, ivars, protocols); memory stats; `dlopen` a dylib into the process. |
 | UI automation | View-tree dump with frames/text/accessibility, tap by label or point, type into fields, JPEG screenshot, native alert, open URL. |
+| Unity / IL2CPP | 35 libtool-compatible tools: images, classes, fields, methods, live objects, singletons, UI-text scan, PlayerPrefs, dump, method patching, scripting. See [ANALYSIS.md](ANALYSIS.md). |
 | Remote access | Embedded HTTP server: MCP (JSON-RPC 2.0, Streamable HTTP) at `/mcp`, REST bridge at `/api/call`, dashboard at `/`, file download/upload at `/api/file`. |
 
 No private frameworks, no CydiaSubstrate symbols, no shell-outs. Everything is
@@ -158,7 +159,7 @@ curl -s http://192.168.1.42:8787/mcp \
        "params":{"name":"devkit_selftest","arguments":{}}}'
 ```
 
-### Tools (48)
+### Tools (83)
 
 **Filesystem** — `fs_roots`, `fs_list`, `fs_stat`, `fs_read`, `fs_write`,
 `fs_mkdir`, `fs_delete`, `fs_move`, `fs_copy`, `fs_search`, `fs_chmod`,
@@ -178,6 +179,16 @@ curl -s http://192.168.1.42:8787/mcp \
 **Control** — `devkit_status`, `devkit_log`, `devkit_selftest`, `panel_open`,
 `panel_close`, `server_start`, `server_stop`, `server_log`
 
+**Unity / IL2CPP (35)** — `ping`, `runtime_info`, `list_images`, `list_classes`,
+`class_info`, `find_field_owners`, `find_methods_by_pattern`,
+`find_classes_inheriting_from`, `find_classes_implementing`, `find_objects`,
+`inspect_object`, `inspect_collection`, `read_field`, `write_field`,
+`invoke_method`, `patch_method`, `restore_patch`, `restore_all`, `patch_status`,
+`watch_field`, `scan_ui_for_value`, `find_singletons`, `scene_roots`,
+`read_player_prefs`, `write_player_prefs`, `compare_instances`, `dump`,
+`run_lua`, `save_script`, `list_scripts`, `lua_help`, `run_ui_lua`,
+`stop_ui_lua`, `ui_lua_status`, `toggle_menu`
+
 Paths accept `~`, `$APP`, `$CONTAINER`, `$DOCS`, `$LIB`, `$TMP`, or relative
 paths (resolved against the app container).
 
@@ -193,6 +204,48 @@ paths (resolved against the app container).
 | `GET /api/file?path=` | raw download |
 | `POST /api/file?path=` | raw upload |
 | `GET /api/status` / `GET /api/log` / `GET /api/screenshot` | shortcuts |
+
+---
+
+## Unity / IL2CPP
+
+ForgeKit resolves the IL2CPP API with `dlsym` at runtime; nothing is linked and
+non-Unity apps simply report `il2cpp: unavailable` (`runtime_info`).
+
+```
+runtime_info                         → backend, assemblies, classes, patch slots
+list_classes {filter:"Player"}       → candidate classes
+class_info {class:"Game.Model.Player"} → fields, methods, parent, interfaces
+find_objects {class:"Game.Model.Player"} → live pointers
+read_field / write_field             → static (object 0) or instance
+invoke_method {class, method, object, args}
+patch_method {class, method, mode:"return"|"nop"|"redirect", value}
+restore_patch / restore_all / patch_status
+dump {filter, path}                  → Documents/forgekit-dump-*.txt
+```
+
+Patching swaps `MethodInfo.methodPointer` and saves the original, so restore is
+exact. Constant returns support bool, integers, float, double, string and `nop`;
+`redirect` points one method at another. Slots: 64. Stubs need executable `mmap`;
+a hardened process that denies it gets a clear error.
+
+### Scripting
+
+The tool names are libtool's, the engine is JavaScriptCore:
+
+```js
+var cls = Class.fromName("Game.Model.Player");
+cls.findObjects(5);
+cls.read("coins", 0);
+cls.write("coins", 999, 0);
+cls.invoke("SetCoins", ptr, [999]);
+```
+
+`run_ui_lua` runs the script once per second and renders its `uiText` in a
+non-interactive overlay. `save_script` persists `.js` files under
+`Documents/ForgeKit/scripts`.
+
+Coverage, substitutions and the full bug audit: **[ANALYSIS.md](ANALYSIS.md)**.
 
 ---
 
@@ -214,6 +267,10 @@ Sources/
   FKRuntime.m         JSC evaluation, ObjC introspection, UI automation
   FKTools.m           tool catalogue, dispatch, filesystem tools
   FKToolsApp.m        application/runtime/UI/server tools (category)
+  FKIL2CPP.h/.m       IL2CPP bridge: dlsym table, class cache, fields, invoke,
+                      patcher (method-pointer swap + ARM64 stubs)
+  FKUnityTools.m      35 Unity tools + JS Class bridge + UI overlay
+  FKUnityScreens.m    class browser, object inspector, patch screen, script console
   FKToolsPrivate.h    shared internal declarations
   FKHTTPServer.m      socket server, routing, auth, request log
   FKMCP.m             JSON-RPC 2.0 / MCP semantics
@@ -249,6 +306,10 @@ the app's touch handling are untouched.
   token like a password. Regenerate it from Network or Settings.
 * **iOS 14+**. `UIScene` is required for window placement; apps that still run a
   single legacy window fall back to `UIScreen` bounds.
+* **IL2CPP only.** The Unity tools need exportable `il2cpp_*` symbols. Stripped or
+  Mono backends report unavailable. `find_objects` on plain C# classes uses a
+  bounded static-field scan, not a GC heap walk; `inspect_collection` supports
+  arrays and `List<T>`. Details in ANALYSIS.md.
 
 ---
 
