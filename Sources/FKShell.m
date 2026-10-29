@@ -871,11 +871,11 @@ static unsigned long long FKShellDirectorySize(NSString *path, NSInteger depth) 
 - (NSString *)keychain:(NSArray *)args {
     NSString *itemClass = @"generic";
     for (NSUInteger i = 0; i < args.count; i++) {
-        if ([args[i] isEqualToString:@"--class"] && i + 1 < args.count) itemClass = args[++i].lowercaseString;
-        else if ([args[i] hasPrefix:@"--class="]) itemClass = [args[i] substringFromIndex:8].lowercaseString;
+        if ([args[i] isEqualToString:@"--class"] && i + 1 < args.count) itemClass = [args[++i] lowercaseString];
+        else if ([args[i] hasPrefix:@"--class="]) itemClass = [[args[i] substringFromIndex:8] lowercaseString];
     }
     if (args.count && ![args[0] hasPrefix:@"-"]) {
-        NSString *subcommand = args[0].lowercaseString;
+        NSString *subcommand = [args[0] lowercaseString];
         if ([subcommand isEqualToString:@"dump"] || [subcommand isEqualToString:@"list"]) {
             // default class unless overridden
         } else if ([subcommand isEqualToString:@"generic"] || [subcommand isEqualToString:@"internet"] ||
