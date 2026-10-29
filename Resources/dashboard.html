@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ForgeKit</title>
+<style>
+:root { --bg:#0b0d10; --panel:#14181d; --line:#232a32; --text:#e6edf3; --dim:#8b98a5; --accent:#f0a04b; --ok:#3fb950; --bad:#f85149; }
+* { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,BlinkMacSystemFont,"SF Mono",Menlo,monospace; }
+header { position:sticky; top:0; z-index:5; display:flex; gap:10px; align-items:center; padding:12px 14px; background:rgba(11,13,16,.94); border-bottom:1px solid var(--line); backdrop-filter:blur(12px); }
+.logo { width:28px; height:28px; border-radius:8px; background:linear-gradient(150deg,#f0a04b,#c2410c); display:grid; place-items:center; font-weight:700; color:#12151a; }
+h1 { font-size:15px; margin:0; letter-spacing:.02em; }
+#app { color:var(--dim); font-size:11px; margin-left:auto; max-width:46vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+nav { display:flex; gap:6px; padding:10px 14px; border-bottom:1px solid var(--line); overflow-x:auto; }
+nav button { background:var(--panel); color:var(--dim); border:1px solid var(--line); border-radius:8px; padding:6px 12px; font:inherit; font-size:12px; }
+nav button.active { color:#12151a; background:var(--accent); border-color:var(--accent); font-weight:600; }
+main { padding:12px 14px 40px; }
+section { display:none; } section.active { display:block; }
+input, textarea, select, button { font:inherit; color:var(--text); }
+input, textarea, select { width:100%; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:9px 10px; }
+textarea { min-height:110px; resize:vertical; }
+button.act { background:var(--accent); color:#12151a; border:0; border-radius:8px; padding:9px 14px; font-weight:600; }
+button.ghost { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 12px; }
+.row { display:flex; gap:8px; align-items:center; margin-bottom:10px; }
+.row > * { flex:1; } .row > button { flex:0 0 auto; }
+.card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px; margin-bottom:10px; }
+.mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; white-space:pre-wrap; word-break:break-word; }
+.dim { color:var(--dim); } .ok { color:var(--ok); } .bad { color:var(--bad); }
+.list { display:flex; flex-direction:column; gap:1px; }
+.item { display:flex; gap:10px; align-items:center; padding:9px 8px; border-bottom:1px solid var(--line); cursor:pointer; }
+.item:last-child { border-bottom:0; }
+.item .name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+.item .meta { color:var(--dim); font-size:11px; }
+.icon { width:20px; text-align:center; opacity:.8; }
+#tokenbar { display:flex; gap:8px; padding:10px 14px; border-bottom:1px solid var(--line); background:#0f1216; }
+#tokenbar input { flex:1; }
+pre.out { background:#0f1216; border:1px solid var(--line); border-radius:8px; padding:10px; max-height:46vh; overflow:auto; margin:10px 0 0; font-size:11.5px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">F</div>
+  <h1>ForgeKit</h1>
+  <div id="app">connecting…</div>
+</header>
+<div id="tokenbar">
+  <input id="token" type="password" placeholder="access token" autocomplete="off" spellcheck="false">
+  <button class="ghost" onclick="saveToken()">Use</button>
+</div>
+<nav>
+  <button data-tab="files" class="active">Files</button>
+  <button data-tab="tools">Tools</button>
+  <button data-tab="console">Console</button>
+  <button data-tab="log">Log</button>
+</nav>
+<main>
+  <section id="files" class="active">
+    <div class="row">
+      <input id="path" value="." spellcheck="false">
+      <button class="ghost" onclick="go()">Go</button>
+    </div>
+    <div class="row" style="gap:6px">
+      <button class="ghost" onclick="roots()">Roots</button>
+      <button class="ghost" onclick="up()">Up</button>
+      <button class="ghost" onclick="mkdir()">New folder</button>
+    </div>
+    <div class="card list" id="listing"><div class="dim">—</div></div>
+    <div class="card" id="preview" style="display:none">
+      <div class="row"><strong id="previewName" class="mono"></strong><button class="ghost" onclick="closePreview()">Close</button></div>
+      <pre class="out mono" id="previewBody"></pre>
+    </div>
+  </section>
+
+  <section id="tools">
+    <div class="card">
+      <div class="row"><select id="tool"></select></div>
+      <textarea id="args" class="mono">{}</textarea>
+      <div class="row" style="margin-top:10px"><button class="act" onclick="runTool()">Run tool</button></div>
+    </div>
+    <pre class="out mono" id="toolOut">—</pre>
+  </section>
+
+  <section id="console">
+    <div class="card">
+      <textarea id="js" class="mono">fk.info()</textarea>
+      <div class="row" style="margin-top:10px"><button class="act" onclick="evalJS()">Evaluate</button></div>
+    </div>
+    <pre class="out mono" id="consoleOut">—</pre>
+  </section>
+
+  <section id="log">
+    <div class="row">
+      <button class="ghost" onclick="loadLog()">Refresh log</button>
+      <button class="ghost" onclick="shot()">Screenshot</button>
+    </div>
+    <div class="card list" id="logList"><div class="dim">—</div></div>
+    <div id="shotBox"></div>
+  </section>
+</main>
+<script>
+const TOKEN_KEY = 'forgekit.token';
+let TOKEN = "__FK_TOKEN__" || localStorage.getItem(TOKEN_KEY) || '';
+let CURRENT = '.';
+const $ = (id) => document.getElementById(id);
+
+function saveToken() { TOKEN = $('token').value.trim(); localStorage.setItem(TOKEN_KEY, TOKEN); refreshStatus(); }
+if (TOKEN) { $('token').value = TOKEN; }
+
+async function api(tool, args) {
+  const res = await fetch('/api/call', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
+    body: JSON.stringify({ tool, arguments: args || {} })
+  });
+  return await res.json();
+}
+async function mcpCall(name, args) {
+  const res = await fetch('/mcp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args || {} } })
+  });
+  return await res.json();
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function refreshStatus() {
+  try {
+    const s = await api('devkit_status', {});
+    const app = s.server ? s.app : null;
+    if (app) $('app').textContent = app.name + ' · ' + app.bundle + ' · ' + app.version;
+    else $('app').textContent = 'unauthorized';
+  } catch (e) { $('app').textContent = 'offline'; }
+}
+
+async function listFiles(path) {
+  CURRENT = path || CURRENT;
+  $('path').value = CURRENT;
+  const r = await api('fs_list', { path: CURRENT });
+  const box = $('listing'); box.innerHTML = '';
+  if (!r.ok) { box.innerHTML = '<div class="bad mono">' + esc(r.error || 'error') + '</div>'; return; }
+  if (!r.entries.length) { box.innerHTML = '<div class="dim">empty</div>'; return; }
+  for (const e of r.entries) {
+    const row = document.createElement('div');
+    row.className = 'item';
+    row.innerHTML = '<div class="icon">' + (e.directory ? '📁' : '📄') + '</div>' +
+      '<div class="name">' + esc(e.name) + '</div><div class="meta">' + (e.directory ? '' : esc(e.size_text || '')) + '</div>';
+    row.onclick = () => e.directory ? listFiles(e.path) : preview(e.path, e.name);
+    box.appendChild(row);
+  }
+}
+function go() { listFiles($('path').value.trim()); }
+function up() { const parts = CURRENT.replace(/\/+$/, '').split('/'); parts.pop(); listFiles(parts.join('/') || '/'); }
+async function roots() {
+  const r = await api('fs_roots', {});
+  const box = $('listing'); box.innerHTML = '';
+  if (!r.ok) { box.innerHTML = '<div class="bad mono">' + esc(r.error) + '</div>'; return; }
+  for (const root of r.roots) {
+    const row = document.createElement('div');
+    row.className = 'item';
+    row.innerHTML = '<div class="icon">' + (root.writable ? '✎' : '🔒') + '</div><div class="name">' + esc(root.name) +
+      '</div><div class="meta">' + esc(root.path) + '</div>';
+    row.onclick = () => listFiles(root.path);
+    box.appendChild(row);
+  }
+}
+async function mkdir() {
+  const name = prompt('Folder name');
+  if (!name) return;
+  await api('fs_mkdir', { path: CURRENT.replace(/\/$/, '') + '/' + name });
+  listFiles(CURRENT);
+}
+async function preview(path, name) {
+  const r = await api('fs_read', { path: path, length: 65536 });
+  $('preview').style.display = 'block';
+  $('previewName').textContent = name;
+  $('previewBody').textContent = r.ok ? (r.content || '') : (r.error || 'error');
+}
+function closePreview() { $('preview').style.display = 'none'; }
+
+async function loadTools() {
+  const res = await fetch('/mcp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })
+  });
+  const data = await res.json();
+  const tools = (data.result && data.result.tools) || [];
+  const select = $('tool'); select.innerHTML = '';
+  for (const t of tools) {
+    const option = document.createElement('option');
+    option.value = t.name;
+    option.textContent = t.name + ' — ' + (t.description || '').slice(0, 60);
+    select.appendChild(option);
+  }
+}
+async function runTool() {
+  let args = {};
+  try { args = JSON.parse($('args').value || '{}'); } catch (e) { $('toolOut').textContent = 'invalid JSON: ' + e.message; return; }
+  const r = await api($('tool').value, args);
+  $('toolOut').textContent = JSON.stringify(r, null, 2);
+}
+async function evalJS() {
+  const r = await api('runtime_eval', { source: $('js').value });
+  $('consoleOut').textContent = JSON.stringify(r, null, 2);
+}
+async function loadLog() {
+  const r = await api('server_log', { limit: 50 });
+  const box = $('logList'); box.innerHTML = '';
+  for (const e of (r.requests || []).reverse()) {
+    const row = document.createElement('div');
+    row.className = 'item';
+    row.innerHTML = '<div class="name mono">' + esc(e.method + ' ' + e.path) + '</div><div class="meta">' + esc(e.status + ' · ' + e.ms + 'ms') + '</div>';
+    box.appendChild(row);
+  }
+  const l = await api('devkit_log', { limit: 30 });
+  if (l.ok) {
+    const pre = document.createElement('pre');
+    pre.className = 'out mono';
+    pre.textContent = l.lines.join('\n');
+    box.appendChild(pre);
+  }
+}
+async function shot() {
+  const r = await api('ui_screenshot', { quality: 0.5 });
+  if (r.ok) $('shotBox').innerHTML = '<img style="max-width:100%;border-radius:10px;border:1px solid var(--line)" src="data:image/jpeg;base64,' + r.base64 + '">';
+  else $('shotBox').textContent = r.error || 'failed';
+}
+document.querySelectorAll('nav button').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('section').forEach(s => s.classList.toggle('active', s.id === btn.dataset.tab));
+    if (btn.dataset.tab === 'tools') loadTools();
+    if (btn.dataset.tab === 'log') loadLog();
+  };
+});
+refreshStatus();
+listFiles('.');
+</script>
+</body>
+</html>

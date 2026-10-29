@@ -1,0 +1,53 @@
+name: build-forgekit
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'Resources/**'
+  workflow_dispatch:
+
+jobs:
+  dylib:
+    name: Build ForgeKit.dylib
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          xcrun --sdk iphoneos --show-sdk-path
+
+      - name: Build dylib
+        run: |
+          chmod +x tools/build-dylib.sh
+          ./tools/build-dylib.sh
+
+      - name: Verify binary
+        run: |
+          set -e
+          lipo -info build/ForgeKit.dylib
+          otool -L build/ForgeKit.dylib
+          nm -gU build/ForgeKit.dylib | head -40
+          # constructor must survive optimisation
+          nm build/ForgeKit.dylib | grep -q FKForgeKitInitialize
+          # no substrate/ellekit symbols may be referenced
+          if nm -u build/ForgeKit.dylib | grep -Ei 'MSHook|substrate|ellekit|libhooker'; then
+            echo "unexpected injection-framework dependency" >&2; exit 1
+          fi
+          size build/ForgeKit.dylib
+
+      - name: Verify no accidental private framework linkage
+        run: |
+          otool -L build/ForgeKit.dylib | grep -Ev '/System/Library/Frameworks/(Foundation|UIKit|CoreGraphics|QuartzCore|JavaScriptCore|Security|CoreImage)\.framework' \
+            | grep -Ev '/usr/lib/lib(z|System|objc)\.' || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ForgeKit-dylib
+          path: build/ForgeKit.dylib
+          retention-days: 30

@@ -1,0 +1,9 @@
+Package: com.r0guee.forgekit
+Name: ForgeKit
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: Application development toolkit dylib for jailed sideloaded apps — hidden panel, container browser, MCP server.
+Maintainer: R0GUEEE
+Author: R0GUEEE
+Section: Development
+Depends: firmware (>= 14.0), mobilesubstrate
