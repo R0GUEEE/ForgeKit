@@ -29,10 +29,9 @@ jobs:
           FRAMEWORKS="-framework Foundation -framework UIKit -framework CoreGraphics -framework QuartzCore -framework JavaScriptCore -framework Security -framework CoreImage -framework AVFoundation -framework MediaPlayer -framework WebKit -lz -lsqlite3"
           clang -target arm64-apple-ios14.0 $COMMON $FRAMEWORKS Sources/*.m -o build/ForgeKit-arm64.dylib
           clang -target arm64e-apple-ios14.0 $COMMON $FRAMEWORKS Sources/*.m -o build/ForgeKit-arm64e.dylib
-          llvm-lipo -create build/ForgeKit-arm64.dylib build/ForgeKit-arm64e.dylib -output build/ForgeKit.dylib
+          python3 tools/make-fat.py build/ForgeKit.dylib build/ForgeKit-arm64.dylib build/ForgeKit-arm64e.dylib
           file build/ForgeKit.dylib
-          llvm-lipo -info build/ForgeKit.dylib
-          llvm-objdump --macho --dylibs-used build/ForgeKit.dylib
+          python3 tools/inspect-macho.py build/ForgeKit.dylib
       - uses: actions/upload-artifact@v4
         with:
           name: ForgeKit-linux
