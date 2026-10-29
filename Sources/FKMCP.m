@@ -20,6 +20,10 @@ static NSDictionary *FKJSONRPCResult(id identifier, id result) {
 
 + (NSString *)protocolVersion { return @"2025-06-18"; }
 
++ (NSDictionary *)dispatchToolCall:(NSString *)name arguments:(NSDictionary *)arguments {
+    return [FKTools callTool:name arguments:arguments];
+}
+
 + (NSArray<NSDictionary *> *)toolDefinitions { return [FKTools toolDefinitions]; }
 
 + (id)handleJSONRPC:(id)payload authorized:(BOOL)authorized {

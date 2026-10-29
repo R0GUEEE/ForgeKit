@@ -119,7 +119,7 @@ FOUNDATION_EXPORT void FKPresentAlert(NSString *title, NSString *message);
 #pragma mark - Runtime automation
 
 @interface FKRuntime : NSObject
-+ (id)evaluateScript:(NSString *)source error:(NSString **)error;
++ (id)evaluateScript:(NSString *)source error:(NSString * _Nullable * _Nullable)error;
 + (NSDictionary *)viewTreeWithDepth:(NSInteger)depth maxNodes:(NSInteger)maxNodes;
 + (NSDictionary *)tapAtPoint:(CGPoint)point;
 + (NSDictionary *)tapElementWithLabel:(NSString *)label;

@@ -204,7 +204,7 @@
             [self promptRename:entry completion:nil];
         }]];
         [actions addObject:[UIAction actionWithTitle:@"Duplicate" image:[UIImage systemImageNamed:@"plus.square.on.square"] identifier:nil handler:^(UIAction *a) {
-            [self duplicate:entry];
+            [self duplicateEntry:entry];
         }]];
         [actions addObject:[UIAction actionWithTitle:@"Compress" image:[UIImage systemImageNamed:@"archivebox"] identifier:nil handler:^(UIAction *a) {
             [self compress:entry];
@@ -339,7 +339,7 @@
     [self presentViewController:alert animated:YES completion:nil];
 }
 
-- (void)duplicate:(NSDictionary *)entry {
+- (void)duplicateEntry:(NSDictionary *)entry {
     NSString *path = entry[@"path"];
     NSString *directory = [path stringByDeletingLastPathComponent];
     NSString *base = path.lastPathComponent.stringByDeletingPathExtension;

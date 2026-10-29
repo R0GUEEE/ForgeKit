@@ -1,329 +1,443 @@
+//
+//  FKTools.m — tool catalogue, dispatch and filesystem tools
+//
 
-#pragma mark - Application introspection
+#import "ForgeKit.h"
+#import <sys/stat.h>
 
-+ (NSDictionary *)appInfo {
-    NSDictionary *info = FKInfoPlist();
-    NSMutableDictionary *identity = [NSMutableDictionary dictionary];
-    identity[@"name"] = FKAppName();
-    identity[@"bundle_id"] = FKAppIdentifier();
-    identity[@"version"] = FKAppVersion();
-    identity[@"short_version"] = info[@"CFBundleShortVersionString"] ?: @"";
-    identity[@"build"] = info[@"CFBundleVersion"] ?: @"";
-    identity[@"minimum_os"] = info[@"MinimumOSVersion"] ?: @"";
-    identity[@"platform"] = info[@"DTPlatformName"] ?: @"";
-    identity[@"sdk"] = info[@"DTSDKName"] ?: @"";
-    identity[@"executable"] = info[@"CFBundleExecutable"] ?: @"";
-    identity[@"url_schemes"] = [info[@"CFBundleURLTypes"] valueForKey:@"CFBundleURLSchemes"] ?: @[];
-
-    NSDictionary *device = @{
-        @"model": FKDeviceModelIdentifier(),
-        @"name": [UIDevice currentDevice].name ?: @"",
-        @"system": [UIDevice currentDevice].systemName ?: @"iOS",
-        @"ios": FKOSVersionString(),
-    };
-    NSDictionary *process = @{
-        @"pid": @([[NSProcessInfo processInfo] processIdentifier]),
-        @"resident_memory": @(FKResidentMemory()),
-        @"resident_memory_text": FKHumanSize(FKResidentMemory()),
-        @"uptime": @([[NSProcessInfo processInfo] systemUptime]),
-    };
-    NSDictionary *sandbox = @{
-        @"jailbroken": @(FKIsJailbroken()),
-        @"container_writable": @([[NSFileManager defaultManager] isWritableFileAtPath:FKContainerPath()]),
-        @"bundle_writable": @([[NSFileManager defaultManager] isWritableFileAtPath:FKBundlePath()]),
-        @"root_readable": @([[NSFileManager defaultManager] isReadableFileAtPath:@"/"]),
-    };
-    return FKOk(@{ @"app": identity, @"device": device, @"process": process,
-                   @"sandbox": sandbox, @"paths": FKApplicationPaths(),
-                   @"signing": @{ @"entitlements": FKEntitlements() } });
+static NSDictionary *FKOk(NSDictionary *payload) {
+    NSMutableDictionary *result = [@{ @"ok": @YES } mutableCopy];
+    if (payload) [result addEntriesFromDictionary:payload];
+    return result;
 }
 
-+ (NSDictionary *)infoPlist:(NSDictionary *)args {
-    NSString *key = FKStringArg(args, @"key");
-    NSDictionary *info = FKInfoPlist();
-    if (key.length) {
-        id value = FKObjectAtKeyPath(info, key);
-        return value ? FKOk(@{ @"key": key, @"value": FKJSONSafe(value) }) : FKFail(@"key not found");
+static NSDictionary *FKFail(NSString *message) {
+    return @{ @"ok": @NO, @"error": message ?: @"failed" };
+}
+
+static NSString *FKStringArg(NSDictionary *args, NSString *key) {
+    id value = args[key];
+    if ([value isKindOfClass:[NSString class]]) return value;
+    if ([value isKindOfClass:[NSNumber class]]) return [value stringValue];
+    return nil;
+}
+
+static BOOL FKBoolArg(NSDictionary *args, NSString *key, BOOL fallback) {
+    id value = args[key];
+    if ([value respondsToSelector:@selector(boolValue)]) return [value boolValue];
+    return fallback;
+}
+
+static NSInteger FKIntArg(NSDictionary *args, NSString *key, NSInteger fallback) {
+    id value = args[key];
+    if ([value respondsToSelector:@selector(integerValue)]) return [value integerValue];
+    return fallback;
+}
+
+@implementation FKTools
+
++ (NSDictionary *)inputSchemaForProperties:(NSDictionary *)properties required:(NSArray *)required {
+    return @{ @"type": @"object",
+              @"properties": properties ?: @{},
+              @"required": required ?: @[],
+              @"additionalProperties": @NO };
+}
+
++ (NSArray *)toolDefinitions {
+    NSMutableArray *tools = [NSMutableArray array];
+    void (^add)(NSString *, NSString *, NSDictionary *, NSArray *) = ^(NSString *name, NSString *description,
+                                                                     NSDictionary *properties, NSArray *required) {
+        [tools addObject:@{ @"name": name,
+                            @"description": description,
+                            @"inputSchema": [self inputSchemaForProperties:properties required:required] }];
+    };
+
+    add(@"fs_roots", @"List candidate filesystem roots with read/write access flags.", @{}, @[]);
+    add(@"fs_list", @"List a directory. Returns name, path, size, mtime and directory flag per entry.",
+        @{ @"path": @{ @"type": @"string", @"description": @"Directory path (defaults to app container)." },
+           @"include_hidden": @{ @"type": @"boolean", @"description": @"Include dotfiles." } },
+        @[]);
+    add(@"fs_stat", @"Stat a path: type, size, POSIX mode, owner, timestamps and access flags.",
+        @{ @"path": @{ @"type": @"string" } }, @[@"path"]);
+    add(@"fs_read", @"Read a file. Returns utf8 text by default; use encoding=base64 for binary.",
+        @{ @"path": @{ @"type": @"string" },
+           @"encoding": @{ @"type": @"string", @"enum": @[@"utf8", @"base64"] },
+           @"offset": @{ @"type": @"integer", @"description": @"Byte offset." },
+           @"length": @{ @"type": @"integer", @"description": @"Maximum bytes to return (default 1 MiB)." } },
+        @[@"path"]);
+    add(@"fs_write", @"Write (replace) a file, creating parent directories.",
+        @{ @"path": @{ @"type": @"string" },
+           @"content": @{ @"type": @"string", @"description": @"Text or base64 payload." },
+           @"encoding": @{ @"type": @"string", @"enum": @[@"utf8", @"base64"] },
+           @"append": @{ @"type": @"boolean" } },
+        @[@"path", @"content"]);
+    add(@"fs_mkdir", @"Create a directory (intermediate directories by default).",
+        @{ @"path": @{ @"type": @"string" },
+           @"intermediates": @{ @"type": @"boolean" } }, @[@"path"]);
+    add(@"fs_delete", @"Delete a file or directory. Non-empty directories require recursive=true.",
+        @{ @"path": @{ @"type": @"string" },
+           @"recursive": @{ @"type": @"boolean" } }, @[@"path"]);
+    add(@"fs_move", @"Move or rename a path.",
+        @{ @"from": @{ @"type": @"string" }, @"to": @{ @"type": @"string" },
+           @"overwrite": @{ @"type": @"boolean" } }, @[@"from", @"to"]);
+    add(@"fs_copy", @"Copy a file or directory tree.",
+        @{ @"from": @{ @"type": @"string" }, @"to": @{ @"type": @"string" },
+           @"overwrite": @{ @"type": @"boolean" } }, @[@"from", @"to"]);
+    add(@"fs_search", @"Recursively search a directory by name substring and/or text content.",
+        @{ @"path": @{ @"type": @"string" },
+           @"name": @{ @"type": @"string", @"description": @"Case-insensitive filename substring." },
+           @"contains": @{ @"type": @"string", @"description": @"Text content to find in files < 2 MiB." },
+           @"max_results": @{ @"type": @"integer" } },
+        @[@"path"]);
+    add(@"fs_chmod", @"Change POSIX permissions, e.g. mode=755.",
+        @{ @"path": @{ @"type": @"string" },
+           @"mode": @{ @"type": @"string" } }, @[@"path", @"mode"]);
+    add(@"fs_zip", @"Create a zip archive from one or more paths.",
+        @{ @"destination": @{ @"type": @"string" },
+           @"sources": @{ @"type": @"array", @"items": @{ @"type": @"string" } } },
+        @[@"destination", @"sources"]);
+    add(@"fs_unzip", @"Extract a zip archive into a directory (path traversal is filtered).",
+        @{ @"archive": @{ @"type": @"string" },
+           @"destination": @{ @"type": @"string" } }, @[@"archive", @"destination"]);
+    add(@"fs_zip_list", @"List entries in a zip archive.",
+        @{ @"archive": @{ @"type": @"string" } }, @[@"archive"]);
+
+    add(@"app_info", @"Application identity: bundle id, name, version, device, sandbox state, paths.",
+        @{}, @[]);
+    add(@"app_paths", @"Resolved application paths (bundle, container, documents, library, groups).",
+        @{}, @[]);
+    add(@"app_info_plist", @"Read Info.plist (whole dictionary, or a single dot-separated key).",
+        @{ @"key": @{ @"type": @"string" } }, @[]);
+    add(@"app_plist_get", @"Read any plist file, optionally one dot-separated key.",
+        @{ @"path": @{ @"type": @"string" },
+           @"key": @{ @"type": @"string" } }, @[@"path"]);
+    add(@"app_plist_set", @"Write a key in a plist file atomically.",
+        @{ @"path": @{ @"type": @"string" },
+           @"key": @{ @"type": @"string" },
+           @"value": @{ @"description": @"New value." },
+           @"value_type": @{ @"type": @"string", @"enum": @[@"string", @"bool", @"int", @"float", @"data", @"raw"] } },
+        @[@"path", @"key", @"value"]);
+    add(@"app_defaults_list", @"List preference domains (plists) inside the app container.",
+        @{}, @[]);
+    add(@"app_defaults_get", @"Read a preference domain, optionally a single key.",
+        @{ @"domain": @{ @"type": @"string" }, @"key": @{ @"type": @"string" } }, @[@"domain"]);
+    add(@"app_defaults_set", @"Write a key in a preference domain.",
+        @{ @"domain": @{ @"type": @"string" }, @"key": @{ @"type": @"string" },
+           @"value": @{ } }, @[@"domain", @"key", @"value"]);
+    add(@"app_entitlements", @"Entitlements parsed from the code signature and provisioning profile.",
+        @{}, @[]);
+    add(@"app_url_schemes", @"URL schemes and document types declared by the app.",
+        @{}, @[]);
+    add(@"app_binaries", @"Mach-O dependencies, rpaths and slices for the app and bundled frameworks.",
+        @{}, @[]);
+    add(@"app_loaded_images", @"Every image currently loaded in the process.",
+        @{}, @[]);
+    add(@"app_keychain", @"Dump keychain items visible to this app (generic/internet/certificate).",
+        @{ @"item_class": @{ @"type": @"string", @"enum": @[@"generic", @"internet", @"certificate"] } }, @[]);
+    add(@"app_cookies", @"List HTTP cookies held by NSHTTPCookieStorage.",
+        @{}, @[]);
+    add(@"app_dylib_load", @"dlopen a dylib inside the process (needs a valid signature or jailbreak).",
+        @{ @"path": @{ @"type": @"string" } }, @[@"path"]);
+
+    add(@"runtime_eval", @"Evaluate JavaScript in a JSC context with the fk.* filesystem bridge.",
+        @{ @"source": @{ @"type": @"string" } }, @[@"source"]);
+    add(@"runtime_classes", @"List Objective-C classes by prefix.",
+        @{ @"prefix": @{ @"type": @"string" }, @"limit": @{ @"type": @"integer" } }, @[]);
+    add(@"runtime_class_info", @"Methods, ivars and protocols of a class.",
+        @{ @"class": @{ @"type": @"string" } }, @[@"class"]);
+    add(@"runtime_memory", @"Process memory statistics.",
+        @{}, @[]);
+
+    add(@"ui_tree", @"Dump the key window's view tree with frames, text and accessibility labels.",
+        @{ @"depth": @{ @"type": @"integer" }, @"max_nodes": @{ @"type": @"integer" } }, @[]);
+    add(@"ui_tap", @"Tap by point (screen points) or by accessibility label / button title.",
+        @{ @"x": @{ @"type": @"number" }, @"y": @{ @"type": @"number" },
+           @"label": @{ @"type": @"string" } }, @[]);
+    add(@"ui_type", @"Type into the focused text field, or the field matching a label.",
+        @{ @"text": @{ @"type": @"string" }, @"label": @{ @"type": @"string" } }, @[@"text"]);
+    add(@"ui_screenshot", @"Screenshot the key window as base64 JPEG.",
+        @{ @"quality": @{ @"type": @"number", @"description": @"0.1 - 1.0, default 0.8" } }, @[]);
+    add(@"ui_alert", @"Present a native alert inside the host app.",
+        @{ @"title": @{ @"type": @"string" }, @"message": @{ @"type": @"string" } }, @[]);
+    add(@"ui_open_url", @"Open a URL with the host app's UIApplication.",
+        @{ @"url": @{ @"type": @"string" } }, @[@"url"]);
+
+    add(@"devkit_status", @"ForgeKit status: version, server, panel, sandbox, memory.",
+        @{}, @[]);
+    add(@"devkit_log", @"Recent ForgeKit log lines.",
+        @{ @"limit": @{ @"type": @"integer" } }, @[]);
+    add(@"panel_open", @"Open the in-app toolkit panel.", @{}, @[]);
+    add(@"panel_close", @"Close the in-app toolkit panel.", @{}, @[]);
+    add(@"server_start", @"Start the HTTP/MCP server.",
+        @{ @"port": @{ @"type": @"integer" } }, @[]);
+    add(@"server_stop", @"Stop the HTTP/MCP server.", @{}, @[]);
+    add(@"server_log", @"Recent HTTP requests.",
+        @{ @"limit": @{ @"type": @"integer" } }, @[]);
+
+    return tools;
+}
+
+#pragma mark - Dispatch
+
++ (NSDictionary *)callTool:(NSString *)name arguments:(NSDictionary *)arguments {
+    NSDictionary *args = [arguments isKindOfClass:[NSDictionary class]] ? arguments : @{};
+    @try {
+        if ([name isEqualToString:@"fs_roots"]) return [self fsRoots];
+        if ([name isEqualToString:@"fs_list"]) return [self fsList:args];
+        if ([name isEqualToString:@"fs_stat"]) return [self fsStat:args];
+        if ([name isEqualToString:@"fs_read"]) return [self fsRead:args];
+        if ([name isEqualToString:@"fs_write"]) return [self fsWrite:args];
+        if ([name isEqualToString:@"fs_mkdir"]) return [self fsMkdir:args];
+        if ([name isEqualToString:@"fs_delete"]) return [self fsDelete:args];
+        if ([name isEqualToString:@"fs_move"]) return [self fsMove:args copy:NO];
+        if ([name isEqualToString:@"fs_copy"]) return [self fsMove:args copy:YES];
+        if ([name isEqualToString:@"fs_search"]) return [self fsSearch:args];
+        if ([name isEqualToString:@"fs_chmod"]) return [self fsChmod:args];
+        if ([name isEqualToString:@"fs_zip"]) return [self fsZip:args];
+        if ([name isEqualToString:@"fs_unzip"]) return [self fsUnzip:args];
+        if ([name isEqualToString:@"fs_zip_list"]) return [self fsZipList:args];
+
+        if ([name isEqualToString:@"app_info"]) return [self appInfo];
+        if ([name isEqualToString:@"app_paths"]) return FKOk(@{ @"paths": FKApplicationPaths() });
+        if ([name isEqualToString:@"app_info_plist"]) return [self infoPlist:args];
+        if ([name isEqualToString:@"app_plist_get"]) return [self plistGet:args];
+        if ([name isEqualToString:@"app_plist_set"]) return [self plistSet:args];
+        if ([name isEqualToString:@"app_defaults_list"]) return [self defaultsList];
+        if ([name isEqualToString:@"app_defaults_get"]) return [self defaultsGet:args];
+        if ([name isEqualToString:@"app_defaults_set"]) return [self defaultsSet:args];
+        if ([name isEqualToString:@"app_entitlements"]) return FKOk(@{ @"entitlements": FKEntitlements() });
+        if ([name isEqualToString:@"app_url_schemes"]) return [self urlSchemes];
+        if ([name isEqualToString:@"app_binaries"]) return [self binaries];
+        if ([name isEqualToString:@"app_loaded_images"]) return FKOk(@{ @"images": FKLoadedImages() });
+        if ([name isEqualToString:@"app_keychain"]) return [self keychain:args];
+        if ([name isEqualToString:@"app_cookies"]) return FKOk(@{ @"cookies": FKHTTPCookies() });
+        if ([name isEqualToString:@"app_dylib_load"]) return [self dylibLoad:args];
+
+        if ([name isEqualToString:@"runtime_eval"]) return [self runtimeEval:args];
+        if ([name isEqualToString:@"runtime_classes"]) return [self runtimeClasses:args];
+        if ([name isEqualToString:@"runtime_class_info"]) return [self runtimeClassInfo:args];
+        if ([name isEqualToString:@"runtime_memory"]) return [self runtimeMemory];
+
+        if ([name isEqualToString:@"ui_tree"]) return [self uiTree:args];
+        if ([name isEqualToString:@"ui_tap"]) return [self uiTap:args];
+        if ([name isEqualToString:@"ui_type"]) return [self uiType:args];
+        if ([name isEqualToString:@"ui_screenshot"]) return [self uiScreenshot:args];
+        if ([name isEqualToString:@"ui_alert"]) return [self uiAlert:args];
+        if ([name isEqualToString:@"ui_open_url"]) return [self uiOpenURL:args];
+
+        if ([name isEqualToString:@"devkit_status"]) return [self status];
+        if ([name isEqualToString:@"devkit_log"]) return [self logWithArgs:args];
+        if ([name isEqualToString:@"panel_open"]) { FKRunOnMain(^{ [[FKPanel sharedPanel] show]; }); return FKOk(@{ @"panel": @"open" }); }
+        if ([name isEqualToString:@"panel_close"]) { FKRunOnMain(^{ [[FKPanel sharedPanel] hide]; }); return FKOk(@{ @"panel": @"closed" }); }
+        if ([name isEqualToString:@"server_start"]) return [self serverStart:args];
+        if ([name isEqualToString:@"server_stop"]) { [[FKHTTPServer sharedServer] stop]; return FKOk(@{ @"running": @NO }); }
+        if ([name isEqualToString:@"server_log"]) return [self serverLog:args];
+
+        return FKFail([NSString stringWithFormat:@"unknown tool %@", name]);
+    } @catch (NSException *exception) {
+        FKLog(@"tool %@ threw %@: %@", name, exception.name, exception.reason);
+        return FKFail([NSString stringWithFormat:@"%@: %@", exception.name, exception.reason]);
     }
-    return FKOk(@{ @"plist": FKJSONSafe(info) });
 }
 
-+ (NSDictionary *)plistGet:(NSDictionary *)args {
+#pragma mark - Filesystem
+
++ (NSDictionary *)fsRoots { return FKOk(@{ @"roots": FKRoots() }); }
+
++ (NSDictionary *)fsList:(NSDictionary *)args {
+    NSString *path = FKExpandPath(FKStringArg(args, @"path") ?: FKContainerPath());
+    NSError *error = nil;
+    NSArray *entries = FKDirectoryList(path, FKBoolArg(args, @"include_hidden", NO), &error);
+    if (error) return FKFail(error.localizedDescription);
+    BOOL exists = [[NSFileManager defaultManager] fileExistsAtPath:path];
+    return FKOk(@{ @"path": path, @"count": @(entries.count), @"entries": entries,
+                   @"writable": @([[NSFileManager defaultManager] isWritableFileAtPath:path]),
+                   @"exists": @(exists) });
+}
+
++ (NSDictionary *)fsStat:(NSDictionary *)args {
+    NSString *path = FKExpandPath(FKStringArg(args, @"path"));
+    if (!path.length) return FKFail(@"path required");
+    return FKOk(@{ @"stat": FKFileAttributes(path) });
+}
+
++ (NSDictionary *)fsRead:(NSDictionary *)args {
     NSString *path = FKExpandPath(FKStringArg(args, @"path"));
     if (!path.length) return FKFail(@"path required");
     NSError *error = nil;
-    NSData *data = [NSData dataWithContentsOfFile:path options:0 error:&error];
+    NSData *data = FKReadData(path, &error);
     if (!data) return FKFail(error.localizedDescription ?: @"cannot read");
-    id plist = [NSPropertyListSerialization propertyListWithData:data options:NSPropertyListImmutable format:NULL error:&error];
-    if (!plist) return FKFail(error.localizedDescription ?: @"not a plist");
-    NSString *key = FKStringArg(args, @"key");
-    if (key.length) {
-        id value = [plist isKindOfClass:[NSDictionary class]] ? FKObjectAtKeyPath(plist, key) : nil;
-        return value ? FKOk(@{ @"key": key, @"value": FKJSONSafe(value) }) : FKFail(@"key not found");
-    }
-    return FKOk(@{ @"path": path, @"plist": FKJSONSafe(plist) });
-}
-
-+ (NSDictionary *)plistSet:(NSDictionary *)args {
-    NSString *path = FKExpandPath(FKStringArg(args, @"path"));
-    NSString *key = FKStringArg(args, @"key");
-    if (!path.length || !key.length) return FKFail(@"path and key required");
-    NSError *error = nil;
-    NSData *data = [NSData dataWithContentsOfFile:path];
-    id plist = data ? [NSPropertyListSerialization propertyListWithData:data options:NSPropertyListMutableContainers format:NULL error:&error] : nil;
-    if (![plist isKindOfClass:[NSMutableDictionary class]]) return FKFail(@"plist missing or not a dictionary");
-    id value = FKCoerceValue(args[@"value"], FKStringArg(args, @"value_type"));
-    if (!FKSetObjectAtKeyPath(plist, key, value)) return FKFail(@"cannot set key");
-    NSData *output = [NSPropertyListSerialization dataWithPropertyList:plist
-                                                                format:NSPropertyListXMLFormat_v1_0
-                                                               options:0
-                                                                 error:&error];
-    if (!output) return FKFail(error.localizedDescription ?: @"encode failed");
-    if (!FKWriteDataAtomically(output, path, &error)) return FKFail(error.localizedDescription ?: @"write failed");
-    return FKOk(@{ @"path": path, @"key": key, @"value": FKJSONSafe(value) });
-}
-
-+ (NSDictionary *)defaultsList {
-    NSString *preferences = [FKLibraryPath() stringByAppendingPathComponent:@"Preferences"];
-    NSArray *files = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:preferences error:nil] ?: @[];
-    NSMutableArray *domains = [NSMutableArray array];
-    for (NSString *file in files) {
-        if (![file.pathExtension isEqualToString:@"plist"]) continue;
-        NSString *path = [preferences stringByAppendingPathComponent:file];
-        NSDictionary *plist = [NSDictionary dictionaryWithContentsOfFile:path];
-        [domains addObject:@{
-            @"domain": [file stringByDeletingPathExtension],
-            @"path": path,
-            @"keys": @(plist.count),
-            @"bytes": @([[[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil][NSFileSize] unsignedLongLongValue]),
-        }];
-    }
-    [domains sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
-        return [a[@"domain"] compare:b[@"domain"]];
-    }];
-    return FKOk(@{ @"preferences": preferences, @"domains": domains });
-}
-
-+ (NSDictionary *)defaultsGet:(NSDictionary *)args {
-    NSString *domain = FKStringArg(args, @"domain");
-    if (!domain.length) return FKFail(@"domain required");
-    NSDictionary *values = [[NSUserDefaults standardUserDefaults] persistentDomainForName:domain];
-    if (!values) {
-        NSString *path = [FKLibraryPath() stringByAppendingPathComponent:
-                          [NSString stringWithFormat:@"Preferences/%@.plist", domain]];
-        values = [NSDictionary dictionaryWithContentsOfFile:path];
-    }
-    if (!values) return FKFail(@"domain not found");
-    NSString *key = FKStringArg(args, @"key");
-    if (key.length) {
-        id value = values[key];
-        return value ? FKOk(@{ @"domain": domain, @"key": key, @"value": FKJSONSafe(value) }) : FKFail(@"key not found");
-    }
-    return FKOk(@{ @"domain": domain, @"values": FKJSONSafe(values) });
-}
-
-+ (NSDictionary *)defaultsSet:(NSDictionary *)args {
-    NSString *domain = FKStringArg(args, @"domain");
-    NSString *key = FKStringArg(args, @"key");
-    if (!domain.length || !key.length) return FKFail(@"domain and key required");
-    id value = args[@"value"];
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    if ([domain isEqualToString:FKAppIdentifier()]) {
-        [defaults setObject:value forKey:key];
-        [defaults synchronize];
-        return FKOk(@{ @"domain": domain, @"key": key, @"value": FKJSONSafe(value), @"scope": @"runtime" });
-    }
-    NSString *path = [FKLibraryPath() stringByAppendingPathComponent:
-                      [NSString stringWithFormat:@"Preferences/%@.plist", domain]];
-    NSMutableDictionary *plist = [[NSDictionary dictionaryWithContentsOfFile:path] mutableCopy] ?: [NSMutableDictionary dictionary];
-    plist[key] = value;
-    NSError *error = nil;
-    NSData *data = [NSPropertyListSerialization dataWithPropertyList:plist format:NSPropertyListBinaryFormat_v1_0 options:0 error:&error];
-    if (!data || !FKWriteDataAtomically(data, path, &error)) return FKFail(error.localizedDescription ?: @"write failed");
-    return FKOk(@{ @"domain": domain, @"key": key, @"path": path, @"scope": @"file" });
-}
-
-+ (NSDictionary *)urlSchemes {
-    NSArray *types = FKInfoPlist()[@"CFBundleURLTypes"];
-    NSMutableArray *result = [NSMutableArray array];
-    if ([types isKindOfClass:[NSArray class]]) {
-        for (NSDictionary *type in types) {
-            id schemes = type[@"CFBundleURLSchemes"];
-            if ([schemes isKindOfClass:[NSArray class]]) [result addObjectsFromArray:schemes];
+    NSUInteger offset = (NSUInteger)MAX(0, FKIntArg(args, @"offset", 0));
+    NSUInteger length = (NSUInteger)MAX(0, FKIntArg(args, @"length", 1024 * 1024));
+    if (offset > data.length) offset = data.length;
+    length = MIN(length, data.length - offset);
+    NSData *slice = [data subdataWithRange:NSMakeRange(offset, length)];
+    BOOL base64 = [[FKStringArg(args, @"encoding") lowercaseString] isEqualToString:@"base64"];
+    NSMutableDictionary *result = [@{
+        @"path": path, @"size": @(data.length), @"offset": @(offset), @"returned": @(slice.length),
+        @"truncated": @(offset + length < data.length), @"encoding": base64 ? @"base64" : @"utf8",
+    } mutableCopy];
+    if (base64) {
+        result[@"content"] = [slice base64EncodedStringWithOptions:0];
+    } else {
+        NSString *text = [[NSString alloc] initWithData:slice encoding:NSUTF8StringEncoding];
+        if (!text) {
+            result[@"encoding"] = @"base64";
+            result[@"content"] = [slice base64EncodedStringWithOptions:0];
+            result[@"note"] = @"not valid UTF-8; returned base64";
+        } else {
+            result[@"content"] = text;
         }
     }
-    return FKOk(@{ @"schemes": result });
+    return FKOk(result);
 }
 
-+ (NSDictionary *)binaries {
-    NSFileManager *fm = [NSFileManager defaultManager];
-    NSMutableArray *binaries = [NSMutableArray array];
-    NSMutableArray *candidates = [NSMutableArray array];
-    if (NSBundle.mainBundle.executablePath) [candidates addObject:NSBundle.mainBundle.executablePath];
-    NSString *frameworks = [FKBundlePath() stringByAppendingPathComponent:@"Frameworks"];
-    for (NSString *name in [fm contentsOfDirectoryAtPath:frameworks error:nil]) {
-        NSString *path = [frameworks stringByAppendingPathComponent:name];
-        NSString *binary = [path stringByAppendingPathComponent:name.stringByDeletingPathExtension];
-        if ([fm fileExistsAtPath:binary]) [candidates addObject:binary];
++ (NSDictionary *)fsWrite:(NSDictionary *)args {
+    NSString *path = FKExpandPath(FKStringArg(args, @"path"));
+    NSString *content = FKStringArg(args, @"content");
+    if (!path.length) return FKFail(@"path required");
+    if (content == nil) return FKFail(@"content required");
+    BOOL base64 = [[FKStringArg(args, @"encoding") lowercaseString] isEqualToString:@"base64"];
+    NSData *payload = base64 ? [[NSData alloc] initWithBase64EncodedString:content options:0]
+                             : [content dataUsingEncoding:NSUTF8StringEncoding];
+    if (!payload) return FKFail(@"invalid payload");
+    BOOL append = FKBoolArg(args, @"append", NO);
+    BOOL success = NO;
+    NSError *error = nil;
+    if (append && [[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:path];
+        if (handle) {
+            @try {
+                [handle seekToEndOfFile];
+                [handle writeData:payload];
+                [handle closeFile];
+                success = YES;
+            } @catch (NSException *exception) {
+                return FKFail(exception.reason ?: @"append failed");
+            }
+        }
+    } else {
+        success = FKWriteDataAtomically(payload, path, &error);
     }
-    NSString *plugins = [FKBundlePath() stringByAppendingPathComponent:@"PlugIns"];
-    for (NSString *name in [fm contentsOfDirectoryAtPath:plugins error:nil]) {
-        NSString *path = [plugins stringByAppendingPathComponent:name];
-        NSString *binary = [path stringByAppendingPathComponent:name.stringByDeletingPathExtension];
-        if ([fm fileExistsAtPath:binary]) [candidates addObject:binary];
-    }
-    for (NSString *path in candidates) {
-        unsigned long long size = [[fm attributesOfItemAtPath:path error:nil][NSFileSize] unsignedLongLongValue];
-        [binaries addObject:@{ @"path": path, @"size": @(size),
-                               @"dependencies": FKMachODependencies(path) }];
-    }
-    return FKOk(@{ @"binaries": binaries });
+    if (!success) return FKFail(error.localizedDescription ?: @"write failed");
+    return FKOk(@{ @"path": path, @"bytes": @(payload.length), @"appended": @(append) });
 }
 
-+ (NSDictionary *)keychain:(NSDictionary *)args {
-    NSString *itemClass = FKStringArg(args, @"item_class") ?: @"generic";
-    NSArray *items = FKKeychainItems(itemClass);
-    return FKOk(@{ @"class": itemClass, @"count": @(items.count), @"items": items });
-}
-
-+ (NSDictionary *)dylibLoad:(NSDictionary *)args {
++ (NSDictionary *)fsMkdir:(NSDictionary *)args {
     NSString *path = FKExpandPath(FKStringArg(args, @"path"));
     if (!path.length) return FKFail(@"path required");
-    if (![[NSFileManager defaultManager] fileExistsAtPath:path]) return FKFail(@"file does not exist");
-    dlerror();
-    void *handle = dlopen(path.UTF8String, RTLD_NOW | RTLD_GLOBAL);
-    if (!handle) {
-        const char *message = dlerror();
-        return FKFail(message ? [NSString stringWithUTF8String:message] : @"dlopen failed");
-    }
-    return FKOk(@{ @"path": path, @"handle": [NSString stringWithFormat:@"%p", handle] });
-}
-
-#pragma mark - Runtime
-
-+ (NSDictionary *)runtimeEval:(NSDictionary *)args {
-    NSString *source = FKStringArg(args, @"source");
-    if (!source.length) return FKFail(@"source required");
-    NSString *error = nil;
-    id result = [FKRuntime evaluateScript:source error:&error];
-    if (error) return FKFail(error);
-    return FKOk(@{ @"result": result ?: @"null" });
-}
-
-+ (NSDictionary *)runtimeClasses:(NSDictionary *)args {
-    NSString *prefix = FKStringArg(args, @"prefix") ?: @"";
-    NSInteger limit = FKIntArg(args, @"limit", 500);
-    return FKOk(@{ @"classes": [FKRuntime classesWithPrefix:prefix limit:limit] });
-}
-
-+ (NSDictionary *)runtimeClassInfo:(NSDictionary *)args {
-    NSString *name = FKStringArg(args, @"class");
-    if (!name.length) return FKFail(@"class required");
-    return FKOk([FKRuntime classInfo:name]);
-}
-
-+ (NSDictionary *)runtimeMemory {
-    uint64_t resident = FKResidentMemory();
-    return FKOk(@{ @"resident": @(resident), @"resident_text": FKHumanSize(resident),
-                   @"threads": @([[NSThread currentThread] isMainThread] ? 1 : 0) });
-}
-
-#pragma mark - UI automation
-
-+ (NSDictionary *)uiTree:(NSDictionary *)args {
-    NSInteger depth = FKIntArg(args, @"depth", 8);
-    NSInteger maxNodes = FKIntArg(args, @"max_nodes", 1500);
-    return FKOk([FKRuntime viewTreeWithDepth:depth maxNodes:maxNodes]);
-}
-
-+ (NSDictionary *)uiTap:(NSDictionary *)args {
-    NSString *label = FKStringArg(args, @"label");
-    if (label.length) return FKOk([FKRuntime tapElementWithLabel:label]);
-    NSNumber *x = args[@"x"];
-    NSNumber *y = args[@"y"];
-    if (![x isKindOfClass:[NSNumber class]] || ![y isKindOfClass:[NSNumber class]])
-        return FKFail(@"provide x and y, or label");
-    return FKOk([FKRuntime tapAtPoint:CGPointMake(x.doubleValue, y.doubleValue)]);
-}
-
-+ (NSDictionary *)uiType:(NSDictionary *)args {
-    NSString *text = FKStringArg(args, @"text");
-    if (text == nil) return FKFail(@"text required");
-    return FKOk([FKRuntime typeText:text intoElementWithLabel:FKStringArg(args, @"label")]);
-}
-
-+ (NSDictionary *)uiScreenshot:(NSDictionary *)args {
-    CGFloat quality = 0.8;
-    NSNumber *value = args[@"quality"];
-    if ([value isKindOfClass:[NSNumber class]]) quality = value.doubleValue;
-    return FKOk([FKRuntime screenshotJPEGQuality:quality]);
-}
-
-+ (NSDictionary *)uiAlert:(NSDictionary *)args {
-    NSString *title = FKStringArg(args, @"title") ?: @"ForgeKit";
-    NSString *message = FKStringArg(args, @"message") ?: @"";
-    FKPresentAlert(title, message);
-    return FKOk(@{ @"presented": @YES });
-}
-
-+ (NSDictionary *)uiOpenURL:(NSDictionary *)args {
-    NSString *string = FKStringArg(args, @"url");
-    NSURL *url = string.length ? [NSURL URLWithString:string] : nil;
-    if (!url) return FKFail(@"invalid url");
-    __block BOOL opened = NO;
-    FKRunOnMain(^{
-        [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:^(BOOL success) {
-            (void)success;
-        }];
-        opened = YES;
-    });
-    return FKOk(@{ @"url": url.absoluteString, @"requested": @(opened) });
-}
-
-#pragma mark - Server / status
-
-+ (NSDictionary *)status {
-    FKHTTPServer *server = [FKHTTPServer sharedServer];
-    NSString *token = [FKPrefs token];
-    NSString *masked = token.length > 8 ? [NSString stringWithFormat:@"%@…%@", [token substringToIndex:4], [token substringFromIndex:token.length - 4]] : @"";
-    return FKOk(@{
-        @"version": FKVersionString,
-        @"app": @{ @"name": FKAppName(), @"bundle": FKAppIdentifier(), @"version": FKAppVersion() },
-        @"device": @{ @"model": FKDeviceModelIdentifier(), @"ios": FKOSVersionString() },
-        @"sandbox": @{ @"jailbroken": @(FKIsJailbroken()), @"container": FKContainerPath() },
-        @"server": @{ @"running": @(server.isRunning), @"port": @(server.port),
-                      @"url": [NSString stringWithFormat:@"http://%@:%u/mcp", FKLanAddress(), server.port],
-                      @"token_masked": masked, @"requires_token": @([FKPrefs boolForKey:@"requireToken" defaultValue:YES]) },
-        @"panel": @{ @"visible": @([[FKPanel sharedPanel] isVisible]), @"gesture": @"long-press status bar left" },
-        @"tools": @([FKTools toolDefinitions].count),
-        @"memory": FKHumanSize(FKResidentMemory()),
-    });
-}
-
-+ (NSDictionary *)logWithArgs:(NSDictionary *)args {
-    NSInteger limit = MAX(1, MIN(FKIntArg(args, @"limit", 200), 2000));
-    NSArray *lines = FKLogLines();
-    NSUInteger start = lines.count > (NSUInteger)limit ? lines.count - (NSUInteger)limit : 0;
-    return FKOk(@{ @"lines": [lines subarrayWithRange:NSMakeRange(start, lines.count - start)] });
-}
-
-+ (NSDictionary *)serverStart:(NSDictionary *)args {
-    uint16_t port = (uint16_t)MAX(1, MIN(FKIntArg(args, @"port", [FKPrefs integerForKey:@"port" defaultValue:8787]), 65535));
     NSError *error = nil;
-    if (![[FKHTTPServer sharedServer] startOnPort:port error:&error])
-        return FKFail(error.localizedDescription ?: @"cannot start server");
-    [FKPrefs setInteger:port forKey:@"port"];
-    return FKOk(@{
-        @"running": @YES,
-        @"port": @(port),
-        @"url": [NSString stringWithFormat:@"http://%@:%u/mcp", FKLanAddress(), port],
-        @"token": [FKPrefs token],
-    });
+    if (![[NSFileManager defaultManager] createDirectoryAtPath:path
+                                   withIntermediateDirectories:FKBoolArg(args, @"intermediates", YES)
+                                                    attributes:nil
+                                                         error:&error]) {
+        return FKFail(error.localizedDescription ?: @"mkdir failed");
+    }
+    return FKOk(@{ @"path": path });
 }
 
-+ (NSDictionary *)serverLog:(NSDictionary *)args {
-    NSInteger limit = MAX(1, MIN(FKIntArg(args, @"limit", 50), 500));
-    return FKOk(@{ @"requests": [[FKHTTPServer sharedServer] recentRequestsWithLimit:limit] });
++ (NSDictionary *)fsDelete:(NSDictionary *)args {
+    NSString *path = FKExpandPath(FKStringArg(args, @"path"));
+    if (!path.length) return FKFail(@"path required");
+    BOOL directory = NO;
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if (![fm fileExistsAtPath:path isDirectory:&directory]) return FKFail(@"path does not exist");
+    if (directory && !FKBoolArg(args, @"recursive", NO)) {
+        NSArray *contents = [fm contentsOfDirectoryAtPath:path error:nil];
+        if (contents.count) return FKFail(@"directory not empty; pass recursive=true");
+    }
+    NSError *error = nil;
+    if (![fm removeItemAtPath:path error:&error]) return FKFail(error.localizedDescription ?: @"delete failed");
+    return FKOk(@{ @"path": path, @"deleted": @YES });
+}
+
++ (NSDictionary *)fsMove:(NSDictionary *)args copy:(BOOL)copy {
+    NSString *from = FKExpandPath(FKStringArg(args, @"from"));
+    NSString *to = FKExpandPath(FKStringArg(args, @"to"));
+    if (!from.length || !to.length) return FKFail(@"from and to are required");
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if (![fm fileExistsAtPath:from]) return FKFail(@"source does not exist");
+    if (!FKBoolArg(args, @"overwrite", NO) && [fm fileExistsAtPath:to]) return FKFail(@"destination exists");
+    NSError *error = nil;
+    [fm createDirectoryAtPath:[to stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
+    BOOL ok = copy ? [fm copyItemAtPath:from toPath:to error:&error] : [fm moveItemAtPath:from toPath:to error:&error];
+    if (!ok) return FKFail(error.localizedDescription ?: @"operation failed");
+    return FKOk(@{ @"from": from, @"to": to, @"operation": copy ? @"copy" : @"move" });
+}
+
++ (NSDictionary *)fsSearch:(NSDictionary *)args {
+    NSString *root = FKExpandPath(FKStringArg(args, @"path"));
+    if (!root.length) return FKFail(@"path required");
+    NSString *namePattern = [FKStringArg(args, @"name") lowercaseString];
+    NSString *contains = FKStringArg(args, @"contains");
+    NSInteger maxResults = MAX(1, MIN(FKIntArg(args, @"max_results", 200), 2000));
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSDirectoryEnumerator<NSString *> *enumerator = [fm enumeratorAtPath:root];
+    NSMutableArray *results = [NSMutableArray array];
+    for (NSString *relative in enumerator) {
+        if (results.count >= (NSUInteger)maxResults) break;
+        NSString *full = [root stringByAppendingPathComponent:relative];
+        BOOL isDirectory = NO;
+        [fm fileExistsAtPath:full isDirectory:&isDirectory];
+        NSString *name = full.lastPathComponent;
+        BOOL nameMatch = !namePattern.length || [name.lowercaseString rangeOfString:namePattern].location != NSNotFound;
+        BOOL contentMatch = NO;
+        if (contains.length && !isDirectory) {
+            NSDictionary *attributes = [fm attributesOfItemAtPath:full error:nil];
+            if ([attributes[NSFileSize] unsignedLongLongValue] < 2 * 1024 * 1024) {
+                NSData *data = [NSData dataWithContentsOfFile:full];
+                NSString *text = data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : nil;
+                contentMatch = text && [text rangeOfString:contains options:NSCaseInsensitiveSearch].location != NSNotFound;
+            }
+        }
+        if ((nameMatch && (!contains.length || contentMatch)) || (contains.length && contentMatch)) {
+            [results addObject:@{ @"path": full, @"name": name, @"directory": @(isDirectory),
+                                  @"match": contentMatch ? @"content" : @"name" }];
+        }
+    }
+    return FKOk(@{ @"root": root, @"count": @(results.count), @"results": results });
+}
+
++ (NSDictionary *)fsChmod:(NSDictionary *)args {
+    NSString *path = FKExpandPath(FKStringArg(args, @"path"));
+    NSString *modeString = FKStringArg(args, @"mode");
+    if (!path.length || !modeString.length) return FKFail(@"path and mode required");
+    unsigned long mode = strtoul(modeString.UTF8String, NULL, 8);
+    NSError *error = nil;
+    if (![[NSFileManager defaultManager] setAttributes:@{ NSFilePosixPermissions: @(mode) }
+                                         ofItemAtPath:path error:&error])
+        return FKFail(error.localizedDescription ?: @"chmod failed");
+    return FKOk(@{ @"path": path, @"mode": modeString });
+}
+
++ (NSDictionary *)fsZip:(NSDictionary *)args {
+    NSString *destination = FKExpandPath(FKStringArg(args, @"destination"));
+    id sources = args[@"sources"];
+    if (!destination.length || ![sources isKindOfClass:[NSArray class]]) return FKFail(@"destination and sources required");
+    NSError *error = nil;
+    if (![FKZip createArchiveAtPath:destination fromPaths:sources error:&error])
+        return FKFail(error.localizedDescription ?: @"zip failed");
+    unsigned long long size = [[[NSFileManager defaultManager] attributesOfItemAtPath:destination error:nil][NSFileSize] unsignedLongLongValue];
+    return FKOk(@{ @"archive": destination, @"bytes": @(size) });
+}
+
++ (NSDictionary *)fsUnzip:(NSDictionary *)args {
+    NSString *archive = FKExpandPath(FKStringArg(args, @"archive"));
+    NSString *destination = FKExpandPath(FKStringArg(args, @"destination"));
+    if (!archive.length || !destination.length) return FKFail(@"archive and destination required");
+    NSError *error = nil;
+    if (![FKZip extractArchiveAtPath:archive toDirectory:destination error:&error])
+        return FKFail(error.localizedDescription ?: @"unzip failed");
+    return FKOk(@{ @"archive": archive, @"destination": destination });
+}
+
++ (NSDictionary *)fsZipList:(NSDictionary *)args {
+    NSString *archive = FKExpandPath(FKStringArg(args, @"archive"));
+    if (!archive.length) return FKFail(@"archive required");
+    NSError *error = nil;
+    NSArray *entries = [FKZip listArchiveAtPath:archive error:&error];
+    if (!entries.count && error) return FKFail(error.localizedDescription);
+    return FKOk(@{ @"archive": archive, @"entries": entries });
 }
 
 @end

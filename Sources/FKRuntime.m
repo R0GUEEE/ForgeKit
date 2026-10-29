@@ -42,7 +42,7 @@ static NSDictionary *FKDescribeView(UIView *view, NSInteger depth, NSInteger max
     *budget -= 1;
     NSMutableDictionary *node = [NSMutableDictionary dictionary];
     node[@"class"] = NSStringFromClass([view class]);
-    node[@"frame"] = NSStringFromRect(view.frame);
+    node[@"frame"] = NSStringFromCGRect(view.frame);
     node[@"text"] = FKViewText(view);
     node[@"hidden"] = @(view.hidden || view.alpha < 0.02);
     node[@"interactive"] = @([view isKindOfClass:[UIControl class]] || view.isUserInteractionEnabled);
@@ -118,7 +118,7 @@ static BOOL FKActivateAtPoint(CGPoint point, NSDictionary **detail) {
     if (!hit) return NO;
     if (detail) {
         *detail = @{ @"class": NSStringFromClass([hit class]),
-                     @"frame": NSStringFromRect([hit convertRect:hit.bounds toView:window]),
+                     @"frame": NSStringFromCGRect([hit convertRect:hit.bounds toView:window]),
                      @"label": FKElementLabel(hit) ?: @"" };
     }
     return FKActivateView(hit);
@@ -225,7 +225,7 @@ static BOOL FKActivateAtPoint(CGPoint point, NSDictionary **detail) {
         result = @{
             @"label": label,
             @"class": NSStringFromClass([view class]),
-            @"frame": NSStringFromRect(view.frame),
+            @"frame": NSStringFromCGRect(view.frame),
             @"activated": @(activated),
         };
     });
