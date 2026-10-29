@@ -875,18 +875,19 @@ static void FKRecordNetwork(NSURLRequest *request, NSURLResponse *response,
               @"count": @(references.count), @"references": references };
 }
 
+static void FKCollectVisibleRects(UIView *view, UIWindow *window, NSMutableArray *rects) {
+    if (!view.hidden && view.alpha > 0.02) {
+        CGRect rect = [view convertRect:view.bounds toView:window];
+        if (rect.size.width > 1 && rect.size.height > 1)
+            [rects addObject:[NSValue valueWithCGRect:rect]];
+    }
+    for (UIView *child in view.subviews) FKCollectVisibleRects(child, window, rects);
+}
+
 + (NSDictionary *)highlightAllViewsInWindow:(UIWindow *)window duration:(double)seconds {
     if (!window) return @{ @"ok": @NO, @"error": @"no window" };
     NSMutableArray *rects = [NSMutableArray array];
-    void (^walk)(UIView *) = ^(UIView *view) {
-        if (!view.hidden && view.alpha > 0.02) {
-            CGRect rect = [view convertRect:view.bounds toView:window];
-            if (rect.size.width > 1 && rect.size.height > 1)
-                [rects addObject:[NSValue valueWithCGRect:rect]];
-        }
-        for (UIView *child in view.subviews) walk(child);
-    };
-    walk(window);
+    FKCollectVisibleRects(window, window, rects);
     FKRunOnMain(^{
         UIWindowScene *scene = FKActiveWindowScene();
         UIWindow *overlay = scene ? [[UIWindow alloc] initWithWindowScene:scene]

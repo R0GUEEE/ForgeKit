@@ -14,7 +14,6 @@ NS_ASSUME_NONNULL_BEGIN
 
 // ObjC explorer
 + (NSDictionary *)heapObjectsOfClass:(nullable NSString *)className limit:(NSInteger)limit;
-+ (NSDictionary *)heapClassCounts:(NSInteger)limit;
 + (NSDictionary *)objectInfo:(unsigned long long)pointer depth:(NSInteger)depth;
 + (NSDictionary *)callClass:(NSString *)className
                    selector:(NSString *)selector
@@ -24,8 +23,6 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSDictionary *)getIvar:(NSString *)name object:(unsigned long long)pointer;
 + (NSDictionary *)setIvar:(NSString *)name object:(unsigned long long)pointer value:(id)value;
 + (NSDictionary *)highlightRect:(CGRect)rect duration:(double)seconds;
-+ (NSDictionary *)highlightAllViewsInWindow:(UIWindow *)window duration:(double)seconds;
-+ (NSDictionary *)referencesTo:(unsigned long long)pointer limit:(NSInteger)limit;
 
 // Memory and modules
 + (NSArray<NSDictionary *> *)modules;
@@ -42,20 +39,36 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSArray<NSDictionary *> *)activeHooks;
 
 // Network capture
+
+// Notifications
+
+// SQLite
+
+@end
+
+
+@interface FKRuntimeKit (Explorer)
++ (NSDictionary *)heapClassCounts:(NSInteger)limit;
++ (NSDictionary *)referencesTo:(unsigned long long)pointer limit:(NSInteger)limit;
++ (NSDictionary *)highlightAllViewsInWindow:(UIWindow *)window duration:(double)seconds;
+@end
+
+@interface FKRuntimeKit (Network)
 + (void)installNetworkRecorder;
 + (NSDictionary *)networkHistory:(NSInteger)limit;
 + (void)clearNetworkHistory;
+@end
 
-// Notifications
+@interface FKRuntimeKit (Notifications)
 + (void)installNotificationRecorder;
 + (NSDictionary *)notificationHistory:(NSInteger)limit;
 + (void)clearNotificationHistory;
+@end
 
-// SQLite
+@interface FKRuntimeKit (SQLite)
 + (NSArray<NSDictionary *> *)sqliteFiles;
 + (NSDictionary *)sqliteTablesAtPath:(NSString *)path;
 + (NSDictionary *)sqliteQuery:(NSString *)sql atPath:(NSString *)path;
-
 @end
 
 NS_ASSUME_NONNULL_END

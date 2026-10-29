@@ -121,8 +121,8 @@ static void FKForgeKitStart(void) {
     });
 }
 
-__attribute__((constructor))
-static void FKForgeKitConstructor(void) {
+__attribute__((constructor, used))
+void FKForgeKitConstructor(void) {
     FKForgeKitStart();
 }
 

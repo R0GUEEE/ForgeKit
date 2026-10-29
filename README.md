@@ -47,10 +47,46 @@ implemented with UIKit/Foundation/Security/JavaScriptCore/CoreImage/zlib.
 
 ### Theos (library target, no substrate)
 
+macOS:
+
 ```sh
 export THEOS=~/theos
-make                            # → .theos/obj/.../libForgeKit.dylib
+make TARGET=iphone:clang:16.5:14.0
 ```
+
+Linux / iSH (what v2.1.0 was built with):
+
+```sh
+git clone --depth 1 --recursive https://github.com/theos/theos.git /opt/theos
+# sparse-clone one SDK (no need for the whole 4 GB repository)
+mkdir -p /opt/theos/sdks && git clone --depth 1 --filter=blob:none --sparse \
+  https://github.com/theos/sdks.git /tmp/sdks
+cd /tmp/sdks && git sparse-checkout set iPhoneOS16.5.sdk
+ln -s /tmp/sdks/iPhoneOS16.5.sdk /opt/theos/sdks/iPhoneOS16.5.sdk
+
+# Theos expects a toolchain directory on Linux; point it at the host clang
+mkdir -p /opt/theos/toolchain/linux/iphone/bin
+for t in clang clang++ cc c++ strip ar ranlib; do
+  ln -sf "$(command -v $t)" /opt/theos/toolchain/linux/iphone/bin/$t
+done
+ln -sf /usr/bin/ld64.lld /opt/theos/toolchain/linux/iphone/bin/ld
+
+export THEOS=/opt/theos
+make clean
+make TARGET=iphone:clang:16.5:14.0 ARCHS=arm64  DEBUG=0 -j1
+make TARGET=iphone:clang:16.5:14.0 ARCHS=arm64e DEBUG=0 -j1
+python3 tools/make-fat.py ForgeKit.dylib \
+  .theos/obj/arm64/ForgeKit.dylib .theos/obj/arm64e/ForgeKit.dylib
+```
+
+On Linux the Makefile disables Theos modules (`ForgeKit_USE_MODULES = 0`) and Apple's
+`strip`/`codesign` (`TARGET_STRIP`/`TARGET_CODESIGN = /bin/true`), because the host tools
+cannot process Mach-O. The dylib is left unsigned; the sideloader signs it with the app.
+Install name is `@rpath/ForgeKit.dylib` (`ForgeKit_INSTALL_PATH = @rpath`).
+
+`-j1` is deliberate: parallel clang jobs exhaust the 4 GB sandbox. If a link is all that
+changed, patch the existing image instead of recompiling:
+`llvm-install-name-tool -id @rpath/ForgeKit.dylib <file>`.
 
 CI: `.github/workflows/build.yml` builds the dylib on macOS, verifies the
 architectures, asserts the constructor symbol survived optimisation, and fails if

@@ -25,12 +25,6 @@ static NSString *FKStringArg(NSDictionary *args, NSString *key) {
     return nil;
 }
 
-static BOOL FKBoolArg(NSDictionary *args, NSString *key, BOOL fallback) {
-    id value = args[key];
-    if ([value respondsToSelector:@selector(boolValue)]) return [value boolValue];
-    return fallback;
-}
-
 static NSInteger FKIntArg(NSDictionary *args, NSString *key, NSInteger fallback) {
     id value = args[key];
     if ([value respondsToSelector:@selector(integerValue)]) return [value integerValue];
