@@ -4,6 +4,8 @@
 
 #import "ForgeKit.h"
 #import "FKPanelScreens.h"
+#import "FKUtilities.h"
+#import "FKRuntimeKit.h"
 #import <ctype.h>
 #import <math.h>
 
@@ -22,16 +24,21 @@
     tile.iconView = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:symbol]];
     tile.iconView.contentMode = UIViewContentModeScaleAspectFit;
     tile.iconView.tintColor = tint;
-    tile.iconView.backgroundColor = [tint colorWithAlphaComponent:0.16];
-    tile.iconView.layer.cornerRadius = 13;
+    tile.iconView.backgroundColor = [tint colorWithAlphaComponent:0.18];
+    tile.iconView.layer.cornerRadius = 12;
     tile.iconView.layer.cornerCurve = kCACornerCurveContinuous;
+    tile.backgroundColor = [UIColor colorWithWhite:1 alpha:0.055];
+    tile.layer.cornerRadius = 16;
+    tile.layer.cornerCurve = kCACornerCurveContinuous;
+    tile.layer.borderWidth = 1;
+    tile.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.07].CGColor;
     tile.iconView.clipsToBounds = YES;
     [tile addSubview:tile.iconView];
 
     tile.titleLabel = [[UILabel alloc] init];
     tile.titleLabel.text = title;
-    tile.titleLabel.font = [UIFont systemFontOfSize:11 weight:UIFontWeightMedium];
-    tile.titleLabel.textColor = [UIColor labelColor];
+    tile.titleLabel.font = [UIFont systemFontOfSize:9.5 weight:UIFontWeightMedium];
+    tile.titleLabel.textColor = [UIColor colorWithWhite:1 alpha:0.88];
     tile.titleLabel.textAlignment = NSTextAlignmentCenter;
     tile.titleLabel.numberOfLines = 2;
     [tile addSubview:tile.titleLabel];
@@ -96,12 +103,70 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
 @interface FKPanelHomeViewController : UIViewController
 @end
 
+@interface FKGradientView : UIView
+@end
+@implementation FKGradientView
++ (Class)layerClass { return [CAGradientLayer class]; }
+@end
+
+@interface FKQuickActionView : UIControl
+@property (nonatomic, strong) UIImageView *iconView;
+@property (nonatomic, strong) UILabel *titleLabel;
+@property (nonatomic, strong) UIColor *tint;
+- (void)configureTitle:(NSString *)title symbol:(NSString *)symbol tint:(UIColor *)tint active:(BOOL)active;
+@end
+@implementation FKQuickActionView
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        self.backgroundColor = [UIColor colorWithWhite:1 alpha:0.06];
+        self.layer.cornerRadius = 14;
+        self.layer.cornerCurve = kCACornerCurveContinuous;
+        self.layer.borderWidth = 1;
+        self.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.08].CGColor;
+        _iconView = [[UIImageView alloc] init];
+        _iconView.contentMode = UIViewContentModeScaleAspectFit;
+        [self addSubview:_iconView];
+        _titleLabel = [[UILabel alloc] init];
+        _titleLabel.font = [UIFont systemFontOfSize:9 weight:UIFontWeightSemibold];
+        _titleLabel.textColor = [UIColor colorWithWhite:1 alpha:0.85];
+        _titleLabel.textAlignment = NSTextAlignmentCenter;
+        _titleLabel.adjustsFontSizeToFitWidth = YES;
+        _titleLabel.minimumScaleFactor = 0.7;
+        [self addSubview:_titleLabel];
+    }
+    return self;
+}
+- (void)configureTitle:(NSString *)title symbol:(NSString *)symbol tint:(UIColor *)tint active:(BOOL)active {
+    self.tint = tint;
+    self.iconView.image = [UIImage systemImageNamed:symbol];
+    self.iconView.tintColor = active ? tint : [UIColor colorWithWhite:0.75 alpha:1.0];
+    self.titleLabel.text = title;
+    self.backgroundColor = active ? [tint colorWithAlphaComponent:0.16] : [UIColor colorWithWhite:1 alpha:0.06];
+    self.layer.borderColor = (active ? [tint colorWithAlphaComponent:0.5] : [UIColor colorWithWhite:1 alpha:0.08]).CGColor;
+}
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    self.iconView.frame = CGRectMake((self.bounds.size.width - 18) / 2, 9, 18, 18);
+    self.titleLabel.frame = CGRectMake(2, 30, self.bounds.size.width - 4, self.bounds.size.height - 32);
+}
+- (void)setHighlighted:(BOOL)highlighted {
+    [super setHighlighted:highlighted];
+    self.alpha = highlighted ? 0.6 : 1.0;
+}
+@end
+
+@interface FKPanelHomeViewController ()
+@property (nonatomic, strong) UILabel *statusLabel;
+@end
+
 @implementation FKPanelHomeViewController
 
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"ForgeKit";
-    self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
+    self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    self.view.backgroundColor = [UIColor colorWithRed:0.045 green:0.05 blue:0.065 alpha:1.0];
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonItemStyleDone
                                                                                            target:self
                                                                                            action:@selector(close)];
@@ -112,7 +177,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
 
     UIStackView *root = [[UIStackView alloc] init];
     root.axis = UILayoutConstraintAxisVertical;
-    root.spacing = 10;
+    root.spacing = 9;
     root.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:root];
     UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
@@ -125,7 +190,11 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
 
     UIView *header = [self headerCard];
     [root addArrangedSubview:header];
-    [header.heightAnchor constraintEqualToConstant:84].active = YES;
+    [header.heightAnchor constraintEqualToConstant:88].active = YES;
+
+    UIView *quick = [self quickActionsRow];
+    [root addArrangedSubview:quick];
+    [quick.heightAnchor constraintEqualToConstant:58].active = YES;
 
     UIStackView *grid = (UIStackView *)[self tileGrid];
     [grid setContentHuggingPriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisVertical];
@@ -133,27 +202,50 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
 
     UIView *footer = [self footerCard];
     [root addArrangedSubview:footer];
-    [footer.heightAnchor constraintEqualToConstant:16].active = YES;
+    [footer.heightAnchor constraintEqualToConstant:14].active = YES;
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(refreshStatus)
+                                                 name:FKServerDidChangeNotification object:nil];
+    [self refreshStatus];
+}
+
+- (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
+
+- (void)refreshStatus {
+    FKHTTPServer *server = [FKHTTPServer sharedServer];
+    NSString *state = server.isRunning ? [NSString stringWithFormat:@"MCP :%u", server.port] : @"MCP off";
+    self.statusLabel.text = [NSString stringWithFormat:@"%@ · %lu tools", state,
+                             (unsigned long)[FKTools toolDefinitions].count];
+    self.statusLabel.textColor = server.isRunning ? [UIColor colorWithRed:0.45 green:1.0 blue:0.6 alpha:1.0]
+                                                  : [UIColor colorWithWhite:0.8 alpha:0.8];
+    [self rebuildQuickActions];
 }
 
 - (UIView *)headerCard {
-    UIView *card = [[UIView alloc] init];
-    card.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
-    card.layer.cornerRadius = 14;
+    FKGradientView *card = [[FKGradientView alloc] init];
+    CAGradientLayer *gradient = (CAGradientLayer *)card.layer;
+    gradient.colors = @[ (id)[UIColor colorWithRed:0.95 green:0.45 blue:0.18 alpha:1.0].CGColor,
+                         (id)[UIColor colorWithRed:0.78 green:0.16 blue:0.32 alpha:1.0].CGColor ];
+    gradient.startPoint = CGPointMake(0, 0);
+    gradient.endPoint = CGPointMake(1, 1);
+    card.layer.cornerRadius = 20;
     card.layer.cornerCurve = kCACornerCurveContinuous;
+    card.clipsToBounds = YES;
 
     UIImageView *icon = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"AppIcon60x60"] ?: [UIImage systemImageNamed:@"app.fill"]];
     icon.contentMode = UIViewContentModeScaleAspectFit;
-    icon.layer.cornerRadius = 10;
+    icon.tintColor = [UIColor whiteColor];
+    icon.backgroundColor = [UIColor colorWithWhite:1 alpha:0.18];
+    icon.layer.cornerRadius = 11;
     icon.layer.cornerCurve = kCACornerCurveContinuous;
     icon.clipsToBounds = YES;
-    icon.tintColor = [UIColor systemOrangeColor];
     icon.translatesAutoresizingMaskIntoConstraints = NO;
     [card addSubview:icon];
 
     UILabel *name = [[UILabel alloc] init];
     name.text = FKAppName();
-    name.font = [UIFont systemFontOfSize:16 weight:UIFontWeightBold];
+    name.font = [UIFont systemFontOfSize:17 weight:UIFontWeightBold];
+    name.textColor = [UIColor whiteColor];
     name.adjustsFontSizeToFitWidth = YES;
     name.minimumScaleFactor = 0.7;
     name.translatesAutoresizingMaskIntoConstraints = NO;
@@ -162,39 +254,123 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
     UILabel *identifier = [[UILabel alloc] init];
     identifier.text = [NSString stringWithFormat:@"%@ · %@", FKAppIdentifier(), FKAppVersion()];
     identifier.font = [UIFont monospacedSystemFontOfSize:8 weight:UIFontWeightRegular];
-    identifier.textColor = [UIColor secondaryLabelColor];
+    identifier.textColor = [UIColor colorWithWhite:1 alpha:0.75];
     identifier.adjustsFontSizeToFitWidth = YES;
     identifier.minimumScaleFactor = 0.6;
     identifier.translatesAutoresizingMaskIntoConstraints = NO;
     [card addSubview:identifier];
 
+    self.statusLabel = [[UILabel alloc] init];
+    self.statusLabel.font = [UIFont monospacedSystemFontOfSize:8.5 weight:UIFontWeightMedium];
+    self.statusLabel.textAlignment = NSTextAlignmentRight;
+    self.statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [card addSubview:self.statusLabel];
+
     UIStackView *badges = [[UIStackView alloc] init];
     badges.axis = UILayoutConstraintAxisHorizontal;
-    badges.spacing = 6;
+    badges.spacing = 5;
     badges.translatesAutoresizingMaskIntoConstraints = NO;
-    [badges addArrangedSubview:FKMakeBadge(FKIsJailbroken() ? @"JAILBROKEN" : @"SANDBOXED",
-                                           FKIsJailbroken() ? [UIColor systemGreenColor] : [UIColor systemOrangeColor])];
-    [badges addArrangedSubview:FKMakeBadge([NSString stringWithFormat:@"iOS %@", FKOSVersionString()],
-                                           [UIColor systemBlueColor])];
+    FKBadgeLabel *sandbox = FKMakeBadge(FKIsJailbroken() ? @"JAILBROKEN" : @"SANDBOXED", [UIColor whiteColor]);
+    sandbox.backgroundColor = [UIColor colorWithWhite:1 alpha:0.18];
+    FKBadgeLabel *ios = FKMakeBadge([NSString stringWithFormat:@"iOS %@", FKOSVersionString()], [UIColor whiteColor]);
+    ios.backgroundColor = [UIColor colorWithWhite:1 alpha:0.18];
+    [badges addArrangedSubview:sandbox];
+    [badges addArrangedSubview:ios];
     [card addSubview:badges];
 
     [NSLayoutConstraint activateConstraints:@[
-        [icon.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:12],
-        [icon.topAnchor constraintEqualToAnchor:card.topAnchor constant:10],
-        [icon.widthAnchor constraintEqualToConstant:38],
-        [icon.heightAnchor constraintEqualToConstant:38],
+        [icon.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:13],
+        [icon.topAnchor constraintEqualToAnchor:card.topAnchor constant:11],
+        [icon.widthAnchor constraintEqualToConstant:40],
+        [icon.heightAnchor constraintEqualToConstant:40],
         [name.leadingAnchor constraintEqualToAnchor:icon.trailingAnchor constant:10],
-        [name.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-12],
-        [name.topAnchor constraintEqualToAnchor:card.topAnchor constant:12],
+        [name.topAnchor constraintEqualToAnchor:card.topAnchor constant:13],
+        [name.trailingAnchor constraintLessThanOrEqualToAnchor:self.statusLabel.leadingAnchor constant:-8],
         [identifier.leadingAnchor constraintEqualToAnchor:name.leadingAnchor],
-        [identifier.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-12],
         [identifier.topAnchor constraintEqualToAnchor:name.bottomAnchor constant:2],
-        [badges.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:12],
-        [badges.topAnchor constraintEqualToAnchor:icon.bottomAnchor constant:6],
-        [badges.bottomAnchor constraintEqualToAnchor:card.bottomAnchor constant:-8],
+        [identifier.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-13],
+        [self.statusLabel.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-13],
+        [self.statusLabel.topAnchor constraintEqualToAnchor:card.topAnchor constant:14],
+        [self.statusLabel.widthAnchor constraintGreaterThanOrEqualToConstant:90],
+        [badges.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:13],
+        [badges.topAnchor constraintEqualToAnchor:icon.bottomAnchor constant:7],
+        [badges.bottomAnchor constraintEqualToAnchor:card.bottomAnchor constant:-9],
         [badges.heightAnchor constraintEqualToConstant:18],
     ]];
     return card;
+}
+
+- (UIView *)quickActionsRow {
+    UIStackView *row = [[UIStackView alloc] init];
+    row.axis = UILayoutConstraintAxisHorizontal;
+    row.spacing = 8;
+    row.distribution = UIStackViewDistributionFillEqually;
+    row.tag = 900;
+    row.translatesAutoresizingMaskIntoConstraints = NO;
+    [self populateQuickActionsInRow:row];
+    return row;
+}
+
+- (void)rebuildQuickActions {
+    UIStackView *row = (UIStackView *)[self.view viewWithTag:900];
+    if (!row) return;
+    [self populateQuickActionsInRow:row];
+}
+
+- (void)populateQuickActionsInRow:(UIStackView *)row {
+    for (UIView *view in row.arrangedSubviews) {
+        [row removeArrangedSubview:view];
+        [view removeFromSuperview];
+    }
+    BOOL serverRunning = [FKHTTPServer sharedServer].isRunning;
+    NSArray *definitions = @[
+        @{ @"title": serverRunning ? @"Stop MCP" : @"Start MCP",
+           @"symbol": @"antenna.radiowaves.left.and.right",
+           @"tint": [UIColor systemGreenColor], @"active": @(serverRunning) },
+        @{ @"title": @"Capture",
+           @"symbol": @"waveform.path.ecg",
+           @"tint": [UIColor systemOrangeColor],
+           @"active": @([FKPrefs boolForKey:@"netCapture" defaultValue:YES]) },
+        @{ @"title": @"Inspector",
+           @"symbol": @"safari",
+           @"tint": [UIColor systemBlueColor],
+           @"active": @([FKPrefs boolForKey:@"webInspector" defaultValue:NO]) },
+        @{ @"title": @"Frames",
+           @"symbol": @"rectangle.dashed",
+           @"tint": [UIColor systemPurpleColor], @"active": @NO },
+    ];
+    for (NSUInteger i = 0; i < definitions.count; i++) {
+        NSDictionary *definition = definitions[i];
+        FKQuickActionView *action = [[FKQuickActionView alloc] initWithFrame:CGRectZero];
+        action.tag = 900 + (NSInteger)i;
+        [action configureTitle:definition[@"title"] symbol:definition[@"symbol"]
+                          tint:definition[@"tint"] active:[definition[@"active"] boolValue]];
+        [action addTarget:self action:@selector(quickActionTapped:) forControlEvents:UIControlEventTouchUpInside];
+        [row addArrangedSubview:action];
+    }
+}
+
+- (void)quickActionTapped:(FKQuickActionView *)sender {
+    NSInteger index = sender.tag - 900;
+    if (index == 0) {
+        FKHTTPServer *server = [FKHTTPServer sharedServer];
+        if (server.isRunning) {
+            [server stop];
+        } else {
+            NSError *error = nil;
+            if (![server startOnPort:(uint16_t)[FKPrefs integerForKey:@"port" defaultValue:8787] error:&error])
+                FKPresentAlert(@"MCP server", error.localizedDescription ?: @"cannot start");
+        }
+    } else if (index == 1) {
+        BOOL enabled = [FKPrefs boolForKey:@"netCapture" defaultValue:YES];
+        [FKPrefs setBool:!enabled forKey:@"netCapture"];
+    } else if (index == 2) {
+        BOOL enabled = [FKPrefs boolForKey:@"webInspector" defaultValue:NO];
+        [FKUtilities setWebInspectorEnabled:!enabled];
+    } else if (index == 3) {
+        [FKRuntimeKit highlightAllViewsInWindow:FKKeyWindow() duration:2.0];
+    }
+    [self refreshStatus];
 }
 
 - (UIView *)tileGrid {
@@ -236,7 +412,6 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
             } else {
                 UIView *placeholder = [[UIView alloc] init];
                 placeholder.userInteractionEnabled = NO;
-                placeholder.backgroundColor = [UIColor clearColor];
                 [rowStack addArrangedSubview:placeholder];
             }
         }
@@ -248,10 +423,11 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
 - (UIView *)footerCard {
     UIView *container = [[UIView alloc] init];
     UILabel *hint = [[UILabel alloc] init];
-    hint.text = [NSString stringWithFormat:@"clock hold · volume up/down · MCP :%ld",
-                 (long)[FKPrefs integerForKey:@"port" defaultValue:8787]];
-    hint.font = [UIFont monospacedSystemFontOfSize:8.5 weight:UIFontWeightRegular];
-    hint.textColor = [UIColor tertiaryLabelColor];
+    hint.text = [NSString stringWithFormat:@"clock hold · volume up/down · MCP :%ld · %lu tools",
+                 (long)[FKPrefs integerForKey:@"port" defaultValue:8787],
+                 (unsigned long)[FKTools toolDefinitions].count];
+    hint.font = [UIFont monospacedSystemFontOfSize:8 weight:UIFontWeightRegular];
+    hint.textColor = [UIColor colorWithWhite:1 alpha:0.38];
     hint.textAlignment = NSTextAlignmentCenter;
     hint.adjustsFontSizeToFitWidth = YES;
     hint.minimumScaleFactor = 0.7;
@@ -263,29 +439,6 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
         [hint.centerYAnchor constraintEqualToAnchor:container.centerYAnchor],
     ]];
     return container;
-}
-
-- (void)tileTapped:(FKTileView *)sender {
-    NSInteger index = sender.tag - 200;
-    NSArray *actions = @[@"flex", @"files", @"app", @"defaults", @"keychain", @"runtime", @"server",
-                         @"log", @"device", @"settings", @"unity", @"shell", @"utilities"];
-    if (index < 0 || index >= (NSInteger)actions.count) return;
-    NSString *action = actions[(NSUInteger)index];
-    UIViewController *controller = nil;
-    if ([action isEqualToString:@"flex"]) controller = [[FKFlexViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
-    else if ([action isEqualToString:@"files"]) controller = [FKFileBrowserViewController browserAtPath:FKContainerPath()];
-    else if ([action isEqualToString:@"defaults"]) controller = [[FKDefaultsViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
-    else if ([action isEqualToString:@"keychain"]) controller = [[FKKeychainViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
-    else if ([action isEqualToString:@"runtime"]) controller = [[FKRuntimeViewController alloc] init];
-    else if ([action isEqualToString:@"server"]) controller = [[FKServerViewController alloc] init];
-    else if ([action isEqualToString:@"settings"]) controller = [[FKSettingsViewController alloc] init];
-    else if ([action isEqualToString:@"log"]) controller = [FKLogViewController logController];
-    else if ([action isEqualToString:@"app"]) controller = [self appInfoController];
-    else if ([action isEqualToString:@"device"]) controller = [self deviceController];
-    else if ([action isEqualToString:@"unity"]) controller = [[FKUnityViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
-    else if ([action isEqualToString:@"shell"]) controller = [[FKShellViewController alloc] init];
-    else if ([action isEqualToString:@"utilities"]) controller = [[FKUtilitiesViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
-    if (controller) [self.navigationController pushViewController:controller animated:YES];
 }
 
 - (UIViewController *)appInfoController {
@@ -487,13 +640,15 @@ static CGRect FKStatusBarClockFrame(void) {
                              : [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     window.windowLevel = UIWindowLevelAlert + 100;
     window.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.6];
+    window.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
 
     FKPanelHomeViewController *home = [[FKPanelHomeViewController alloc] init];
     UINavigationController *navigation = [[UINavigationController alloc] initWithRootViewController:home];
     navigation.navigationBar.prefersLargeTitles = NO;
     UINavigationBarAppearance *appearance = [[UINavigationBarAppearance alloc] init];
     [appearance configureWithTransparentBackground];
-    appearance.backgroundColor = [[UIColor systemBackgroundColor] colorWithAlphaComponent:0.92];
+    appearance.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.55];
+    appearance.titleTextAttributes = @{ NSForegroundColorAttributeName: [UIColor whiteColor] };
     navigation.navigationBar.standardAppearance = appearance;
     navigation.navigationBar.scrollEdgeAppearance = appearance;
     window.rootViewController = navigation;

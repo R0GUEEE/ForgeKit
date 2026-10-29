@@ -690,60 +690,205 @@
 
 #pragma mark - FLEX home
 
-@interface FKHeapClassesViewController : UITableViewController
+@interface FKFlexModuleButton : UIControl
+@property (nonatomic, strong) UIImageView *iconView;
+@property (nonatomic, strong) UILabel *titleLabel;
+- (void)configureTitle:(NSString *)title symbol:(NSString *)symbol selected:(BOOL)selected;
 @end
-@interface FKGlobalsViewController : FKListViewController
+
+@implementation FKFlexModuleButton
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        _iconView = [[UIImageView alloc] init];
+        _iconView.contentMode = UIViewContentModeScaleAspectFit;
+        [self addSubview:_iconView];
+        _titleLabel = [[UILabel alloc] init];
+        _titleLabel.font = [UIFont systemFontOfSize:8.5 weight:UIFontWeightSemibold];
+        _titleLabel.textAlignment = NSTextAlignmentCenter;
+        _titleLabel.adjustsFontSizeToFitWidth = YES;
+        _titleLabel.minimumScaleFactor = 0.7;
+        [self addSubview:_titleLabel];
+        self.layer.cornerRadius = 12;
+        self.layer.cornerCurve = kCACornerCurveContinuous;
+    }
+    return self;
+}
+- (void)configureTitle:(NSString *)title symbol:(NSString *)symbol selected:(BOOL)selected {
+    UIColor *accent = [UIColor colorWithRed:1.0 green:0.55 blue:0.2 alpha:1.0];
+    self.iconView.image = [UIImage systemImageNamed:symbol];
+    self.iconView.tintColor = selected ? accent : [UIColor colorWithWhite:0.7 alpha:1.0];
+    self.titleLabel.text = title;
+    self.titleLabel.textColor = selected ? accent : [UIColor colorWithWhite:0.7 alpha:1.0];
+    self.backgroundColor = selected ? [accent colorWithAlphaComponent:0.15] : [UIColor clearColor];
+}
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    self.iconView.frame = CGRectMake((self.bounds.size.width - 22) / 2, 8, 22, 22);
+    self.titleLabel.frame = CGRectMake(1, 33, self.bounds.size.width - 2, self.bounds.size.height - 35);
+}
+- (void)setHighlighted:(BOOL)highlighted {
+    [super setHighlighted:highlighted];
+    self.alpha = highlighted ? 0.6 : 1.0;
+}
 @end
-@interface FKNotificationsViewController : UITableViewController
-@end
-@interface FKWebViewsViewController : UITableViewController
-@end
-@interface FKSQLiteListViewController : UITableViewController
-@end
-@interface FKSQLiteTablesViewController : UITableViewController
-+ (instancetype)controllerWithPath:(NSString *)path;
-@end
-@interface FKSystemViewController : FKListViewController
+
+@interface FKFlexViewController ()
+@property (nonatomic, strong) UINavigationController *moduleNav;
+@property (nonatomic, strong) NSArray<NSDictionary *> *modules;
+@property (nonatomic, strong) NSMutableArray<FKFlexModuleButton *> *moduleButtons;
+@property (nonatomic, strong) NSArray<NSDictionary *> *entries;
+@property (nonatomic, assign) NSInteger selectedIndex;
 @end
 
 @implementation FKFlexViewController
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    __weak typeof(self) weakSelf = self;
-    self.screenTitle = @"FLEX";
-    self.title = @"FLEX";
-    self.sections = @[
-        @{ @"title": @"Runtime", @"rows": @[
-            @{ @"title": @"Hierarchy", @"subtitle": @"Live view tree", @"chevron": @YES,
-               @"action": ^{ [weakSelf push:[FKHierarchyViewController controllerWithView:FKKeyWindow()]]; } },
-            @{ @"title": @"Heap", @"subtitle": @"Live objects grouped by class", @"chevron": @YES,
-               @"action": ^{ [weakSelf push:[[FKHeapClassesViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
-            @{ @"title": @"Classes", @"subtitle": @"Methods, ivars, invocation", @"chevron": @YES,
-               @"action": ^{ [weakSelf push:[[FKObjCClassListViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
-            @{ @"title": @"Libraries", @"subtitle": @"Mach-O images and exports", @"chevron": @YES,
-               @"action": ^{ [weakSelf push:[[FKLibrariesViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
-            @{ @"title": @"Network", @"subtitle": @"Captured traffic", @"chevron": @YES,
-               @"action": ^{ [weakSelf push:[[FKTrafficViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
-        ] },
-        @{ @"title": @"Data", @"rows": @[
-            @{ @"title": @"Globals", @"subtitle": @"Defaults, cookies, keychain, notifications", @"chevron": @YES,
-               @"action": ^{ [weakSelf push:[[FKGlobalsViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
-            @{ @"title": @"Files", @"subtitle": FKContainerPath(), @"chevron": @YES,
-               @"action": ^{ [weakSelf push:[FKFileBrowserViewController browserAtPath:FKContainerPath()]]; } },
-            @{ @"title": @"SQLite", @"subtitle": @"Databases in the container", @"chevron": @YES,
-               @"action": ^{ [weakSelf push:[[FKSQLiteListViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
-        ] },
-        @{ @"title": @"System", @"rows": @[
-            @{ @"title": @"System information", @"subtitle": @"Device, process, disk, image counts", @"chevron": @YES,
-               @"action": ^{ [weakSelf push:[[FKSystemViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]]; } },
-        ] },
+    self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    self.view.backgroundColor = [UIColor colorWithRed:0.035 green:0.035 blue:0.045 alpha:1.0];
+
+    UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
+
+    UIView *topBar = [[UIView alloc] init];
+    topBar.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:topBar];
+
+    UILabel *logo = [[UILabel alloc] init];
+    logo.text = @"FLEX";
+    logo.font = [UIFont systemFontOfSize:22 weight:UIFontWeightHeavy];
+    logo.textColor = [UIColor colorWithRed:1.0 green:0.55 blue:0.2 alpha:1.0];
+    logo.translatesAutoresizingMaskIntoConstraints = NO;
+    [topBar addSubview:logo];
+
+    UILabel *subtitle = [[UILabel alloc] init];
+    subtitle.text = @"runtime explorer";
+    subtitle.font = [UIFont monospacedSystemFontOfSize:8.5 weight:UIFontWeightRegular];
+    subtitle.textColor = [UIColor colorWithWhite:0.55 alpha:1.0];
+    subtitle.translatesAutoresizingMaskIntoConstraints = NO;
+    [topBar addSubview:subtitle];
+
+    UIButton *done = [UIButton buttonWithType:UIButtonTypeSystem];
+    [done setTitle:@"Done" forState:UIControlStateNormal];
+    [done setTitleColor:[UIColor colorWithWhite:0.9 alpha:1.0] forState:UIControlStateNormal];
+    done.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
+    [done addTarget:self action:@selector(done) forControlEvents:UIControlEventTouchUpInside];
+    done.translatesAutoresizingMaskIntoConstraints = NO;
+    [topBar addSubview:done];
+
+    UIScrollView *toolbar = [[UIScrollView alloc] init];
+    toolbar.showsHorizontalScrollIndicator = NO;
+    toolbar.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:toolbar];
+
+    UIStackView *toolbarStack = [[UIStackView alloc] init];
+    toolbarStack.axis = UILayoutConstraintAxisHorizontal;
+    toolbarStack.spacing = 4;
+    toolbarStack.alignment = UIStackViewAlignmentCenter;
+    toolbarStack.translatesAutoresizingMaskIntoConstraints = NO;
+    [toolbar addSubview:toolbarStack];
+
+    self.moduleNav = [[UINavigationController alloc] init];
+    self.moduleNav.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    self.moduleNav.view.translatesAutoresizingMaskIntoConstraints = NO;
+    UINavigationBarAppearance *appearance = [[UINavigationBarAppearance alloc] init];
+    [appearance configureWithTransparentBackground];
+    appearance.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.75];
+    appearance.titleTextAttributes = @{ NSForegroundColorAttributeName: [UIColor whiteColor] };
+    self.moduleNav.navigationBar.standardAppearance = appearance;
+    self.moduleNav.navigationBar.scrollEdgeAppearance = appearance;
+    self.moduleNav.navigationBar.tintColor = [UIColor colorWithRed:1.0 green:0.55 blue:0.2 alpha:1.0];
+    [self addChildViewController:self.moduleNav];
+    [self.view addSubview:self.moduleNav.view];
+    [self.moduleNav didMoveToParentViewController:self];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [topBar.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor],
+        [topBar.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
+        [topBar.topAnchor constraintEqualToAnchor:safe.topAnchor],
+        [topBar.heightAnchor constraintEqualToConstant:44],
+
+        [logo.leadingAnchor constraintEqualToAnchor:topBar.leadingAnchor constant:14],
+        [logo.topAnchor constraintEqualToAnchor:topBar.topAnchor constant:2],
+        [subtitle.leadingAnchor constraintEqualToAnchor:logo.trailingAnchor constant:7],
+        [subtitle.centerYAnchor constraintEqualToAnchor:logo.centerYAnchor],
+
+        [done.trailingAnchor constraintEqualToAnchor:topBar.trailingAnchor constant:-14],
+        [done.centerYAnchor constraintEqualToAnchor:topBar.centerYAnchor],
+
+        [toolbar.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor],
+        [toolbar.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
+        [toolbar.topAnchor constraintEqualToAnchor:topBar.bottomAnchor],
+        [toolbar.heightAnchor constraintEqualToConstant:64],
+
+        [toolbarStack.leadingAnchor constraintEqualToAnchor:toolbar.leadingAnchor constant:10],
+        [toolbarStack.trailingAnchor constraintEqualToAnchor:toolbar.trailingAnchor constant:-10],
+        [toolbarStack.topAnchor constraintEqualToAnchor:toolbar.topAnchor],
+        [toolbarStack.bottomAnchor constraintEqualToAnchor:toolbar.bottomAnchor],
+        [toolbarStack.heightAnchor constraintEqualToAnchor:toolbar.heightAnchor],
+
+        [self.moduleNav.view.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+        [self.moduleNav.view.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+        [self.moduleNav.view.topAnchor constraintEqualToAnchor:toolbar.bottomAnchor],
+        [self.moduleNav.view.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
+    ]];
+
+    self.entries = @[
+        @{ @"title": @"Hierarchy", @"symbol": @"square.stack.3d.up.fill", @"make": ^{ return [FKHierarchyViewController controllerWithView:FKKeyWindow()]; } },
+        @{ @"title": @"Heap", @"symbol": @"memorychip.fill", @"make": ^{ return [[FKHeapClassesViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]; } },
+        @{ @"title": @"Classes", @"symbol": @"cube.box.fill", @"make": ^{ return [[FKObjCClassListViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]; } },
+        @{ @"title": @"Network", @"symbol": @"network", @"make": ^{ return [[FKTrafficViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]; } },
+        @{ @"title": @"Libraries", @"symbol": @"books.vertical.fill", @"make": ^{ return [[FKLibrariesViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]; } },
+        @{ @"title": @"Globals", @"symbol": @"globe", @"make": ^{ return [[FKGlobalsViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]; } },
+        @{ @"title": @"Files", @"symbol": @"folder.fill", @"make": ^{ return [FKFileBrowserViewController browserAtPath:FKContainerPath()]; } },
+        @{ @"title": @"SQLite", @"symbol": @"cylinder.split.1x2.fill", @"make": ^{ return [[FKSQLiteListViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]; } },
+        @{ @"title": @"System", @"symbol": @"gearshape.2.fill", @"make": ^{ return [[FKSystemViewController alloc] initWithStyle:UITableViewStyleInsetGrouped]; } },
     ];
-    [self reloadSections];
+
+    self.moduleButtons = [NSMutableArray array];
+    for (NSUInteger i = 0; i < self.entries.count; i++) {
+        NSDictionary *entry = self.entries[i];
+        FKFlexModuleButton *button = [[FKFlexModuleButton alloc] initWithFrame:CGRectZero];
+        button.tag = 700 + (NSInteger)i;
+        [button configureTitle:entry[@"title"] symbol:entry[@"symbol"] selected:NO];
+        [button.widthAnchor constraintEqualToConstant:58].active = YES;
+        [button.heightAnchor constraintEqualToConstant:58].active = YES;
+        [button addTarget:self action:@selector(moduleTapped:) forControlEvents:UIControlEventTouchUpInside];
+        [toolbarStack addArrangedSubview:button];
+        [self.moduleButtons addObject:button];
+    }
+    [self selectIndex:0];
 }
 
-- (void)push:(UIViewController *)controller {
-    [self.navigationController pushViewController:controller animated:YES];
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    self.navigationController.navigationBarHidden = YES;
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    self.navigationController.navigationBarHidden = NO;
+}
+
+- (void)done {
+    [self.navigationController popViewControllerAnimated:YES];
+}
+
+- (void)moduleTapped:(FKFlexModuleButton *)sender {
+    [self selectIndex:sender.tag - 700];
+}
+
+- (void)selectIndex:(NSInteger)index {
+    if (index < 0 || index >= (NSInteger)self.entries.count) return;
+    self.selectedIndex = index;
+    for (NSUInteger i = 0; i < self.moduleButtons.count; i++) {
+        NSDictionary *entry = self.entries[i];
+        [self.moduleButtons[i] configureTitle:entry[@"title"] symbol:entry[@"symbol"] selected:(NSInteger)i == index];
+    }
+    id makeObject = self.entries[(NSUInteger)index][@"make"];
+    UIViewController *(^make)(void) = (UIViewController *(^)(void))makeObject;
+    UIViewController *root = make ? make() : nil;
+    if (root) [self.moduleNav setViewControllers:@[root] animated:NO];
 }
 
 @end
