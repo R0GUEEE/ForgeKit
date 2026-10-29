@@ -131,8 +131,11 @@
         for (NSString *kind in @[@"generic", @"internet", @"certificate"]) {
             @try {
                 NSArray *items = FKKeychainItems(kind);
+                int status = FKKeychainLastStatus();
+                FKLog(@"keychain %@: %lu items (%@)", kind, (unsigned long)items.count,
+                      FKKeychainStatusText(status));
                 [groups addObject:@{ @"kind": kind, @"items": items ?: @[],
-                                     @"status": @(FKKeychainLastStatus()) }];
+                                     @"status": @(status) }];
             } @catch (NSException *exception) {
                 [groups addObject:@{ @"kind": kind, @"items": @[],
                                      @"status": @(errSecInternalError),
