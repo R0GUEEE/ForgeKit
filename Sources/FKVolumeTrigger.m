@@ -15,6 +15,7 @@
 #import "ForgeKit.h"
 #import <AVFoundation/AVFoundation.h>
 #import <math.h>
+#import <dlfcn.h>
 
 static NSString * const FKVolumeDidChangeNotification = @"AVSystemController_SystemVolumeDidChangeNotification";
 static NSString * const FKVolumeReasonKey = @"AVSystemController_AudioVolumeChangeReasonNotificationParameter";
