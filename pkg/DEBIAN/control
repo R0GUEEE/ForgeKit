@@ -1,0 +1,9 @@
+Package: com.r0guee.forgekit
+Name: ForgeKit
+Version: 2.2.0
+Architecture: iphoneos-arm64
+Description: Application development toolkit dylib for jailbroken iOS — hidden panel, FLEX-style explorer, sandbox shell, MCP server, IL2CPP bridge. Rootless layout.
+Maintainer: R0GUEEE
+Author: R0GUEEE
+Section: Development
+Depends: firmware (>= 14.0)

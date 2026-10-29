@@ -33,6 +33,7 @@ FOUNDATION_EXPORT NSString *FKTempPath(void);
 FOUNDATION_EXPORT NSArray<NSString *> *FKGroupContainerPaths(void);
 FOUNDATION_EXPORT NSArray<NSDictionary *> *FKRoots(void);
 FOUNDATION_EXPORT BOOL FKIsJailbroken(void);
+FOUNDATION_EXPORT NSString *FKJailbreakPrefix(void);
 FOUNDATION_EXPORT NSString *FKAppName(void);
 FOUNDATION_EXPORT NSString *FKAppIdentifier(void);
 FOUNDATION_EXPORT NSString *FKAppVersion(void);

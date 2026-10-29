@@ -15,7 +15,7 @@
 #import <dlfcn.h>
 #import <mach-o/dyld.h>
 
-NSString * const FKVersionString = @"2.1.0";
+NSString * const FKVersionString = @"2.2.0";
 NSString * const FKServerDidChangeNotification = @"FKServerDidChangeNotification";
 
 static NSMutableArray<NSString *> *FKLogStorage(void) {
@@ -137,6 +137,15 @@ NSArray<NSDictionary *> *FKRoots(void) {
     add(@"Shared App Group", @"/var/mobile/Containers/Shared/AppGroup");
     if ([[NSFileManager defaultManager] fileExistsAtPath:@"/var/jb"]) add(@"Jailbreak /var/jb", @"/var/jb");
     return roots;
+}
+
+NSString *FKJailbreakPrefix(void) {
+    static NSString *prefix;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        prefix = [[NSFileManager defaultManager] fileExistsAtPath:@"/var/jb"] ? @"/var/jb" : @"";
+    });
+    return prefix;
 }
 
 BOOL FKIsJailbroken(void) {

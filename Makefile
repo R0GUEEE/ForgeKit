@@ -21,7 +21,7 @@ ifeq ($(shell uname -s),Linux)
 TARGET_STRIP = /bin/true
 TARGET_CODESIGN = /bin/true
 ForgeKit_CFLAGS += -fno-modules -g0
-ForgeKit_LDFLAGS = -fuse-ld=lld -Wl,-platform_version,ios,14.0,16.5
+ForgeKit_LDFLAGS = -fuse-ld=lld -Wl,-platform_version,ios,14.0,16.5 -Wl,-no_dead_strip_inits_and_terms
 ForgeKit_USE_MODULES = 0
 endif
 

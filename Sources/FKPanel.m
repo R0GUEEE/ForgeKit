@@ -651,6 +651,16 @@ static CGRect FKStatusBarClockFrame(void) {
         return;
     }
     _showAttempts = 0;
+    if (!scene) {
+        if (@available(iOS 26.0, *)) {
+            // iOS 26+ expects every window to be scene-backed; wait for one.
+            if (_showAttempts++ < 8) {
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+                               dispatch_get_main_queue(), ^{ [self show]; });
+            }
+            return;
+        }
+    }
     UIWindow *window = scene ? [[UIWindow alloc] initWithWindowScene:scene]
                              : [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     window.windowLevel = UIWindowLevelAlert + 100;

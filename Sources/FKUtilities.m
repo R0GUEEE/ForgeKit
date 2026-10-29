@@ -32,7 +32,15 @@ static NSArray<NSString *> *FKUtilitySearchDirectories(void) {
     [directories addObject:bundle];
     [directories addObject:[FKDocumentsPath() stringByAppendingPathComponent:@"ForgeKit/dylibs"]];
     [directories addObject:@"/usr/lib"];
-    [directories addObject:@"/var/jb/usr/lib"];
+    NSString *jb = FKJailbreakPrefix();
+    if (jb.length) {
+        [directories addObject:[jb stringByAppendingPathComponent:@"usr/lib"]];
+        [directories addObject:[jb stringByAppendingPathComponent:@"usr/local/lib"]];
+        [directories addObject:[jb stringByAppendingPathComponent:@"Library/MobileSubstrate/DynamicLibraries"]];
+        [directories addObject:[jb stringByAppendingPathComponent:@"Library/Frameworks"]];
+    } else {
+        [directories addObject:@"/var/jb/usr/lib"];
+    }
     return directories;
 }
 

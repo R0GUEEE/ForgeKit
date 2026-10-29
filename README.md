@@ -73,8 +73,8 @@ ln -sf /usr/bin/ld64.lld /opt/theos/toolchain/linux/iphone/bin/ld
 
 export THEOS=/opt/theos
 make clean
-make TARGET=iphone:clang:16.5:14.0 ARCHS=arm64  DEBUG=0 -j1
-make TARGET=iphone:clang:16.5:14.0 ARCHS=arm64e DEBUG=0 -j1
+make TARGET=iphone:clang:16.5:14.0 ARCHS=arm64  DEBUG=0 OPTFLAG=-O0 -j1
+make TARGET=iphone:clang:16.5:14.0 ARCHS=arm64e DEBUG=0 OPTFLAG=-O0 -j1
 python3 tools/make-fat.py ForgeKit.dylib \
   .theos/obj/arm64/ForgeKit.dylib .theos/obj/arm64e/ForgeKit.dylib
 ```
@@ -84,7 +84,8 @@ On Linux the Makefile disables Theos modules (`ForgeKit_USE_MODULES = 0`) and Ap
 cannot process Mach-O. The dylib is left unsigned; the sideloader signs it with the app.
 Install name is `@rpath/ForgeKit.dylib` (`ForgeKit_INSTALL_PATH = @rpath`).
 
-`-j1` is deliberate: parallel clang jobs exhaust the 4 GB sandbox. If a link is all that
+`OPTFLAG=-O0` is deliberate for the 4 GB sandbox: `-O2` plus a clean build can throw
+`std::bad_alloc` inside clang. `-j1` likewise avoids parallel memory spikes. If a link is all that
 changed, patch the existing image instead of recompiling:
 `llvm-install-name-tool -id @rpath/ForgeKit.dylib <file>`.
 
@@ -105,6 +106,33 @@ after the deferred setup starts (`setup-start`) and on completion (`setup-done`)
 records setup exceptions with their reason.
 
 ---
+
+## Jailbroken install (rootless, iOS 15–27)
+
+`ForgeKit_2.2.0_iphoneos-arm64.deb` installs the universal dylib and a filter template:
+
+```
+/var/jb/usr/lib/ForgeKit.dylib
+/var/jb/Library/MobileSubstrate/DynamicLibraries/ForgeKit.plist
+```
+
+```sh
+# on device (root shell) or through Sileo/Zebra
+dpkg -i ForgeKit_2.2.0_iphoneos-arm64.deb
+# pick the apps that should load it
+$EDITOR /var/jb/Library/MobileSubstrate/DynamicLibraries/ForgeKit.plist
+killall -9 SpringBoard   # or the target app
+```
+
+The filter ships with `com.apple.springboard`. Replace `Bundles` with the bundle id of the
+app you are working on (one entry per app), or use `Executables` for processes without a
+bundle. The dylib itself contains no substrate/ElleKit symbols: every hook is installed with
+the Objective-C runtime, so ElleKit, Substitute and libhooker all work, and so does
+`dlopen`-style injection.
+
+Rootless paths are resolved at runtime (`FKJailbreakPrefix()`): FLEX/Frida lookups include
+`/var/jb/usr/lib`, `/var/jb/usr/local/lib`, `/var/jb/Library/MobileSubstrate/DynamicLibraries`
+and `/var/jb/Library/Frameworks` when `/var/jb` exists.
 
 ## Inject into a jailed app
 
@@ -361,6 +389,21 @@ navigation stack per module so drill-down keeps its own back button. The module 
 scrolls horizontally when space is tight; the content below is full height.
 
 ## iOS 27 compatibility
+
+Built for jailbroken iOS 27 (rootless) and jailed sideloading from one source tree:
+
+* **No hard private frameworks.** WebKit and MediaPlayer are `dlopen`ed on demand; the
+  load list is 13 system libraries.
+* **Two independent start paths.** `__mod_init_func` (arm64e) and
+  `+[FKForgeKitLoader load]` (both slices) run the same once-guarded setup, so a linker
+  that drops the initializer section cannot disable the tweak.
+* **Scene-only windows on iOS 26+.** The panel waits for a `UIWindowScene` instead of
+  creating a `UIScreen`-backed window, which iOS 26/27 rejects.
+* **Class-cluster-safe recording.** The notification swizzle targets
+  `object_getClass(defaultCenter)`, not the abstract class.
+* **Everything fails soft.** Volume, status bar, heap scan, memory writes and hooks return
+  errors instead of exceptions when the underlying mechanism is unavailable.
+
 
 The build uses only public APIs plus the four documented fallback chains (status bar clock,
 volume events, notification class cluster, WebKit inspector). WebKit and MediaPlayer are no

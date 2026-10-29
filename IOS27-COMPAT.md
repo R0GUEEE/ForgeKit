@@ -161,3 +161,21 @@ a documented replacement. The fragile parts are the status bar view scan, the vo
 notification name, and the MPVolumeView slider — each has at least one fallback, and each
 fails soft. The two items that need attention outside the dylib are the host app's local
 network usage string and its privacy manifest; both are documented and templated.
+
+
+---
+
+## 7. v2.2.0 addendum — rootless rebuild
+
+* Packaged as a rootless Debian package (`/var/jb/usr/lib/ForgeKit.dylib` plus filter
+  plist). Install path is scheme-aware; `FKJailbreakPrefix()` feeds the runtime search
+  paths for FLEX/Frida helpers.
+* `FKForgeKitConstructor` is `__attribute__((constructor, used))`; `+[FKForgeKitLoader load]`
+  remains the second start path. In the arm64 slice lld still omits `__mod_init_func`, so
+  `+load` is the effective path there — verified present in the shipped image.
+* On iOS 26+ the panel refuses to create a `UIScreen`-backed window and retries until a
+  `UIWindowScene` exists.
+* No substrate/ElleKit/libhooker symbols are referenced, so any jailbreak loader can
+  inject it.
+* Remaining unverifiable item: iOS 27 device behaviour. Everything above is static
+  verification plus documented fallbacks; the on-device test plan in §5 still applies.
