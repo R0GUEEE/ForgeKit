@@ -49,19 +49,19 @@ static vm_prot_t FKProtectionAt(uintptr_t address) {
     return info.protection;
 }
 
-static NSHashTable *FKClassRegistry(void) {
-    static NSHashTable *registry;
+static NSSet<NSValue *> *FKClassRegistry(void) {
+    static NSSet<NSValue *> *registry;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        registry = [NSHashTable hashTableWithOptions:
-                    NSPointerFunctionsOpaqueMemory | NSPointerFunctionsOpaquePersonality];
+        NSMutableSet<NSValue *> *classes = [NSMutableSet set];
         int count = objc_getClassList(NULL, 0);
-        if (count <= 0) return;
-        Class *classes = malloc(sizeof(Class) * (size_t)count);
-        if (!classes) return;
-        count = objc_getClassList(classes, count);
-        for (int i = 0; i < count; i++) [registry addObject:(__bridge id)classes[i]];
-        free(classes);
+        if (count <= 0) { registry = classes; return; }
+        Class *list = malloc(sizeof(Class) * (size_t)count);
+        if (!list) { registry = classes; return; }
+        count = objc_getClassList(list, count);
+        for (int i = 0; i < count; i++) [classes addObject:[NSValue valueWithPointer:list[i]]];
+        free(list);
+        registry = classes;
     });
     return registry;
 }
@@ -78,7 +78,7 @@ static BOOL FKClassChainContains(Class cls, Class ancestor) {
 #pragma mark - Heap scan
 
 typedef struct {
-    __unsafe_unretained NSHashTable *classes;
+    __unsafe_unretained NSSet<NSValue *> *classes;
     __unsafe_unretained Class target;
     __unsafe_unretained NSMutableArray *results;
     NSUInteger limit;
@@ -104,9 +104,10 @@ static void FKHeapRecorder(task_t task, void *baton, unsigned typeMask,
         if (range.size < sizeof(void *)) continue;
         uintptr_t address = (uintptr_t)range.address;
         if (!FKMemReadable(address, sizeof(void *))) continue;
-        Class isa = *(Class *)address;
-        if (!isa) continue;
-        if (![context->classes containsObject:(__bridge id)isa]) continue;
+        void *rawISA = *(void **)address;
+        if (!rawISA) continue;
+        Class isa = (__bridge Class)rawISA;
+        if (![context->classes containsObject:[NSValue valueWithPointer:isa]]) continue;
         if (context->target && !FKClassChainContains(isa, context->target)) continue;
         [context->results addObject:@(address)];
     }
@@ -134,11 +135,13 @@ static id FKDecodeIvar(id object, Ivar ivar) {
     if (!FKMemReadable((uintptr_t)address, 8)) return @{ @"error": @"unreadable ivar" };
     switch (encoding[0]) {
         case '@': {
-            id value = *(id *)address;
+            void *raw = *(void **)address;
+            id value = raw ? (__bridge id)raw : nil;
             return FKDecodePointerValue(value);
         }
         case '#': {
-            Class value = *(Class *)address;
+            void *raw = *(void **)address;
+            Class value = raw ? (__bridge Class)raw : Nil;
             return @{ @"value": value ? NSStringFromClass(value) : @"nil" };
         }
         case ':': {
@@ -158,7 +161,7 @@ static id FKDecodeIvar(id object, Ivar ivar) {
         }
         case '{': {
             NSData *data = [NSData dataWithBytes:address length:32];
-            return @{ @"value": @"<struct>", @"hex": data.base64EncodedStringWithOptions:0 };
+            return @{ @"value": @"<struct>", @"hex": [data base64EncodedStringWithOptions:0] };
         }
         default: {
             void *value = *(void **)address;
