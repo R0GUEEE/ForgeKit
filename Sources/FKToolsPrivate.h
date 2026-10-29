@@ -4,6 +4,11 @@
 
 #import "ForgeKit.h"
 
+@interface FKUnityTools : NSObject
++ (NSArray<NSDictionary *> *)definitions;
++ (NSDictionary *)callTool:(NSString *)name arguments:(NSDictionary *)arguments;
+@end
+
 @interface FKTools (Application)
 + (NSDictionary *)appInfo;
 + (NSDictionary *)infoPlist:(NSDictionary *)args;

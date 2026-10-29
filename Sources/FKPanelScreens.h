@@ -22,3 +22,9 @@
 @interface FKLogViewController : UITableViewController
 + (instancetype)logController;
 @end
+
+@interface FKUnityViewController : UITableViewController
+@end
+
+@interface FKScriptConsoleViewController : UIViewController
+@end

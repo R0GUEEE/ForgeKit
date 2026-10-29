@@ -179,6 +179,7 @@ static NSInteger FKIntArg(NSDictionary *args, NSString *key, NSInteger fallback)
     add(@"devkit_selftest", @"Exercise filesystem, zip, JavaScript, keychain and UI paths; returns per-check results.",
         @{}, @[]);
 
+    [tools addObjectsFromArray:[FKUnityTools definitions]];
     return tools;
 }
 
@@ -239,6 +240,9 @@ static NSInteger FKIntArg(NSDictionary *args, NSString *key, NSInteger fallback)
         if ([name isEqualToString:@"server_stop"]) { [[FKHTTPServer sharedServer] stop]; return FKOk(@{ @"running": @NO }); }
         if ([name isEqualToString:@"server_log"]) return [self serverLog:args];
         if ([name isEqualToString:@"devkit_selftest"]) return [self selfTest];
+
+        NSDictionary *unityResult = [FKUnityTools callTool:name arguments:args];
+        if (unityResult) return unityResult;
 
         return FKFail([NSString stringWithFormat:@"unknown tool %@", name]);
     } @catch (NSException *exception) {

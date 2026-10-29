@@ -139,6 +139,7 @@
 }
 
 - (NSArray *)rowsFor:(NSArray *)items {
+    __weak typeof(self) weakSelf = self;
     NSMutableArray *rows = [NSMutableArray array];
     for (NSDictionary *item in items) {
         NSString *service = item[@"service"] ?: item[@"account"] ?: @"(unnamed)";
@@ -152,7 +153,7 @@
             @"action": ^{
                 NSString *body = FKJSONString(item, YES);
                 UIViewController *controller = [FKTextViewController viewerWithTitle:service text:body];
-                [FKTopViewController().navigationController pushViewController:controller animated:YES];
+                [weakSelf.navigationController pushViewController:controller animated:YES];
             },
             @"_secret": secret ?: @"",
         }];

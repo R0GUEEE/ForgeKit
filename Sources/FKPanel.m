@@ -200,6 +200,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
         @{ @"title": @"Log", @"symbol": @"text.alignleft", @"tint": [UIColor systemGrayColor], @"action": @"log" },
         @{ @"title": @"Device", @"symbol": @"iphone", @"tint": [UIColor systemIndigoColor], @"action": @"device" },
         @{ @"title": @"Settings", @"symbol": @"gearshape.fill", @"tint": [UIColor systemPinkColor], @"action": @"settings" },
+        @{ @"title": @"Unity", @"symbol": @"cube.transparent.fill", @"tint": [UIColor systemBrownColor], @"action": @"unity" },
     ];
 
     UIStackView *grid = [[UIStackView alloc] init];
@@ -259,7 +260,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
 
 - (void)tileTapped:(FKTileView *)sender {
     NSInteger index = sender.tag - 200;
-    NSArray *actions = @[@"files", @"app", @"defaults", @"keychain", @"runtime", @"server", @"log", @"device", @"settings"];
+    NSArray *actions = @[@"files", @"app", @"defaults", @"keychain", @"runtime", @"server", @"log", @"device", @"settings", @"unity"];
     if (index < 0 || index >= (NSInteger)actions.count) return;
     NSString *action = actions[(NSUInteger)index];
     UIViewController *controller = nil;
@@ -272,6 +273,7 @@ static FKBadgeLabel *FKMakeBadge(NSString *text, UIColor *color) {
     else if ([action isEqualToString:@"log"]) controller = [FKLogViewController logController];
     else if ([action isEqualToString:@"app"]) controller = [self appInfoController];
     else if ([action isEqualToString:@"device"]) controller = [self deviceController];
+    else if ([action isEqualToString:@"unity"]) controller = [[FKUnityViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
     if (controller) [self.navigationController pushViewController:controller animated:YES];
 }
 
@@ -440,6 +442,7 @@ static CGRect FKStatusBarClockFrame(void) {
     UIWindow *_window;
     UINavigationController *_navigation;
     NSHashTable<UIWindow *> *_observedWindows;
+    __weak UIWindow *_previousKeyWindow;
 }
 
 + (instancetype)sharedPanel {
@@ -484,8 +487,10 @@ static CGRect FKStatusBarClockFrame(void) {
     navigation.navigationBar.scrollEdgeAppearance = appearance;
     window.rootViewController = navigation;
 
+    _previousKeyWindow = FKKeyWindow();
     window.alpha = 0;
     window.hidden = NO;
+    [window makeKeyAndVisible];
     _window = window;
     _navigation = navigation;
     FKLog(@"panel opened in %@", FKAppIdentifier());
@@ -506,6 +511,8 @@ static CGRect FKStatusBarClockFrame(void) {
     } completion:^(BOOL finished) {
         window.hidden = YES;
         window.rootViewController = nil;
+        UIWindow *previous = self->_previousKeyWindow;
+        if (previous) [previous makeKeyWindow];
     }];
 }
 

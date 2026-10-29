@@ -6,4 +6,4 @@ Description: Application development toolkit dylib for jailed sideloaded apps â€
 Maintainer: R0GUEEE
 Author: R0GUEEE
 Section: Development
-Depends: firmware (>= 14.0), mobilesubstrate
+Depends: firmware (>= 14.0)

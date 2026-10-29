@@ -195,7 +195,7 @@
             [self openEntry:entry];
         }]];
         if ([entry[@"directory"] boolValue]) {
-            [actions addObject:[UIAction actionWithTitle:@"Open in new window" image:[UIImage systemImageNamed:@"rectangle.stack"] identifier:nil handler:^(UIAction *a) {
+            [actions addObject:[UIAction actionWithTitle:@"Open in browser" image:[UIImage systemImageNamed:@"rectangle.stack"] identifier:nil handler:^(UIAction *a) {
                 FKFileBrowserViewController *browser = [FKFileBrowserViewController browserAtPath:path];
                 [self.navigationController pushViewController:browser animated:YES];
             }]];
@@ -236,7 +236,10 @@
     if ([@[@"png", @"jpg", @"jpeg", @"gif", @"webp", @"heic", @"bmp", @"tiff"] containsObject:extension]) {
         [self.navigationController pushViewController:[FKImageViewController viewerWithPath:path] animated:YES];
     } else if ([extension isEqualToString:@"plist"]) {
-        NSDictionary *plist = [NSDictionary dictionaryWithContentsOfFile:path];
+        NSData *plistData = [NSData dataWithContentsOfFile:path];
+        id plist = plistData ? [NSPropertyListSerialization propertyListWithData:plistData
+                                                                        options:NSPropertyListImmutable
+                                                                         format:NULL error:nil] : nil;
         if (plist) {
             NSError *error = nil;
             NSData *xml = [NSPropertyListSerialization dataWithPropertyList:plist format:NSPropertyListXMLFormat_v1_0 options:0 error:&error];

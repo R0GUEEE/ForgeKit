@@ -222,7 +222,12 @@ static UIImage *FKQRCodeImage(NSString *string, CGFloat scale) {
         [self refresh];
         return;
     }
-    uint16_t port = (uint16_t)MAX(1, MIN(self.portField.text.integerValue, 65535));
+    NSInteger requested = self.portField.text.integerValue;
+    if (requested < 1 || requested > 65535) {
+        FKPresentAlert(@"Invalid port", @"Pick a value between 1 and 65535.");
+        return;
+    }
+    uint16_t port = (uint16_t)requested;
     NSError *error = nil;
     if (![server startOnPort:port error:&error]) {
         FKPresentAlert(@"Cannot start", error.localizedDescription ?: @"unknown error");

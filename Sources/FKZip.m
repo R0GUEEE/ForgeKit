@@ -213,7 +213,7 @@ static NSData *FKInflateData(NSData *input, NSUInteger expectedSize) {
         return @[];
     }
     NSUInteger eocd = NSNotFound;
-    for (NSUInteger i = length - 22; i > 0 && i > length - 65558; i--) {
+    for (NSUInteger i = length - 22; i != NSNotFound && i > (length > 65558 ? length - 65558 : 0); i--) {
         if (FKReadU32(bytes, i) == 0x06054b50) { eocd = i; break; }
     }
     if (eocd == NSNotFound) {
@@ -252,7 +252,7 @@ static NSData *FKInflateData(NSData *input, NSUInteger expectedSize) {
     const uint8_t *bytes = data.bytes;
     NSUInteger length = data.length;
     NSUInteger eocd = NSNotFound;
-    for (NSUInteger i = length >= 22 ? length - 22 : 0; i > 0 && i > (length > 65558 ? length - 65558 : 0); i--) {
+    for (NSUInteger i = length >= 22 ? length - 22 : 0; i != NSNotFound && i > (length > 65558 ? length - 65558 : 0); i--) {
         if (FKReadU32(bytes, i) == 0x06054b50) { eocd = i; break; }
     }
     if (eocd == NSNotFound) {
