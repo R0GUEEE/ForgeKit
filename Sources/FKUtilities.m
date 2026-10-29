@@ -184,7 +184,32 @@ static void FKSwizzleWKWebViewMethod(Class cls, SEL original, SEL replacement, I
     for (UIView *child in view.subviews) [self visitWebViews:child];
 }
 
+#pragma mark - FLEX gesture
+
+@interface FKFLEXGestureTarget : NSObject <UIGestureRecognizerDelegate>
+@end
+
+static NSHashTable<UIWindow *> *gFLEXGestureWindows = nil;
+static BOOL gFLEXGestureInstalled = NO;
+static BOOL gFLEXLoaderLoaded = NO;
+static FKFLEXGestureTarget *gFLEXGestureTarget = nil;
+
+@implementation FKFLEXGestureTarget
+- (void)handleFLEXPress:(UILongPressGestureRecognizer *)gesture {
+    if (gesture.state != UIGestureRecognizerStateBegan) return;
+    if (![FKPrefs boolForKey:@"flexGesture" defaultValue:YES]) return;
+    UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+    [generator impactOccurred];
+    [FKUtilities showFLEX];
+}
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
+shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)other {
+    return YES;
+}
+@end
+
 #pragma mark FLEX
+
 
 + (NSDictionary *)flexStatusInternal {
     Class managerClass = NSClassFromString(@"FLEXManager");
