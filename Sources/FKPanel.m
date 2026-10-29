@@ -570,7 +570,7 @@ static CGRect FKFindClockView(UIView *view, UIWindow *window, CGRect *timeFallba
     // Some builds expose the clock through a class name instead of text.
     if (timeFallback && CGRectIsNull(*timeFallback)) {
         NSString *className = NSStringFromClass([view class]);
-        if ([className containsString:@"Time"] && frame.size.width >= 16 &&
+        if (([className containsString:@"Time"] || [className containsString:@"Clock"]) && frame.size.width >= 16 &&
             frame.size.height >= 10 && frame.size.height <= 40) {
             *timeFallback = frame;
         }
@@ -612,6 +612,7 @@ static CGRect FKStatusBarClockFrame(void) {
     UINavigationController *_navigation;
     NSHashTable<UIWindow *> *_observedWindows;
     __weak UIWindow *_previousKeyWindow;
+    NSInteger _showAttempts;
 }
 
 + (instancetype)sharedPanel {
@@ -641,6 +642,15 @@ static CGRect FKStatusBarClockFrame(void) {
     if (self.isVisible) return;
 
     UIWindowScene *scene = FKActiveWindowScene();
+    if (!scene && !FKKeyWindow()) {
+        // iOS 26/27 can deliver the activation gesture before the scene exists.
+        if (_showAttempts++ < 8) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{ [self show]; });
+        }
+        return;
+    }
+    _showAttempts = 0;
     UIWindow *window = scene ? [[UIWindow alloc] initWithWindowScene:scene]
                              : [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     window.windowLevel = UIWindowLevelAlert + 100;

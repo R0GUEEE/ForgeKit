@@ -324,6 +324,15 @@ Globals, Files, SQLite, System) with a selected pill, a `Done` button, and a ded
 navigation stack per module so drill-down keeps its own back button. The module toolbar
 scrolls horizontally when space is tight; the content below is full height.
 
+## iOS 27 compatibility
+
+The build uses only public APIs plus the four documented fallback chains (status bar clock,
+volume events, notification class cluster, WebKit inspector). `IOS27-COMPAT.md` inventories
+every API with its risk and fallback, lists the residual risks, and gives an on-device test
+plan. Two items live in the host app, not the dylib: `NSLocalNetworkUsageDescription` in
+Info.plist and the required-reason entries from `Resources/PrivacyInfo.xcprivacy` merged into
+the app's privacy manifest.
+
 ## Native runtime toolkit (FLEX + Frida replacement)
 
 FLEX's explorer and the Frida gadget's memory/hook tooling are implemented **inside

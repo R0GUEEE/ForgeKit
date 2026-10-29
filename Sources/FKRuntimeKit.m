@@ -952,10 +952,14 @@ static void FKRecordNotification(NSString *name, id object, BOOL hasUserInfo) {
     dispatch_once(&once, ^{
         gNotifications = [NSMutableArray array];
         gNotificationLock = [[NSLock alloc] init];
-        Class center = [NSNotificationCenter class];
-        FKSwizzleInstance(center, @selector(postNotificationName:object:),
+        // NSNotificationCenter is a class cluster. Swizzling the abstract class
+        // misses overrides on the concrete class (the class cluster class can
+        // change between iOS releases), so target the class of defaultCenter.
+        Class centerClass = object_getClass([NSNotificationCenter defaultCenter]);
+        if (!centerClass) centerClass = [NSNotificationCenter class];
+        FKSwizzleInstance(centerClass, @selector(postNotificationName:object:),
                           @selector(fk_postNotificationName:object:));
-        FKSwizzleInstance(center, @selector(postNotificationName:object:userInfo:),
+        FKSwizzleInstance(centerClass, @selector(postNotificationName:object:userInfo:),
                           @selector(fk_postNotificationName:object:userInfo:));
         FKLog(@"notification recorder installed");
     });
